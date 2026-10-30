@@ -84,10 +84,14 @@ class Engine:
         return vec / (np.linalg.norm(vec) + 1e-9)
 
 
-def top_similarity(vec, gallery, k=3):
-    """Mean of the k best cosine similarities: one lucky sample isn't enough."""
+def top_similarity(vec, gallery, k=None):
+    """Mean of the k best cosine similarities: a few lucky samples aren't
+    enough. k grows with the gallery (3 for up to 23 samples, then one per 6
+    samples): the more samples there are, the easier it is for someone else
+    to be close to a few of them by chance."""
     if gallery is None or not len(gallery):
         return -1.0
+    k = max(3, len(gallery) // 6) if k is None else k
     sims = np.sort(gallery @ vec)[::-1]
     return float(sims[:k].mean())
 

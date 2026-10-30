@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.2.6
+
+**Security: wider margin after adding glasses frames.**
+
+- Tested again with the look-alike brother after the owner re-enrolled and
+  added frames with glasses (`facelock improve`, 32 samples): refused, but
+  his best 5-frame AuraFace median came within 0.04 of the bar, and with
+  glasses he passed SFace.
+- A face's score is now the mean of its k closest samples with k growing
+  with the enrolment (3 up to 23 samples, then one per 6), so a larger
+  enrolment doesn't make lucky matches easier.
+- Personal bar: enrolment consistency minus 0.08 (was 0.12), up to 0.75.
+  For the tested owner: 0.675, while his own scans run at 0.74-0.84.
+- The brother's real frames from both tests are unit tests: refused with at
+  least 0.07 margin even with SFace taken out.
+- `facelock add-other` is strongly recommended for look-alike relatives.
+
 ## 1.2.5
 
 - Fixed: enrolling or `facelock improve` could fail with "the frames don't

@@ -179,6 +179,28 @@ class RealScoresTests(unittest.TestCase):
                (0.482, 0.503), (0.534, 0.551), (0.504, 0.507), (0.477, 0.517), (0.496, 0.523),
                (0.569, 0.503), (0.520, 0.506), (0.458, 0.497), (0.469, 0.462), (0.458, 0.488),
                (0.473, 0.545), (0.454, 0.514), (0.454, 0.530), (0.477, 0.501)]
+    # the same brother after the owner re-enrolled (p10 0.755) and added
+    # frames with glasses (32 samples): without, then with glasses
+    BROTHER_2 = [(0.480, 0.512), (0.479, 0.468), (0.478, 0.510), (0.458, 0.496), (0.476, 0.564),
+                 (0.487, 0.509), (0.485, 0.487), (0.454, 0.478), (0.502, 0.465), (0.452, 0.448),
+                 (0.455, 0.434), (0.457, 0.487), (0.477, 0.535), (0.498, 0.539), (0.545, 0.523),
+                 (0.514, 0.546), (0.520, 0.560), (0.531, 0.576), (0.534, 0.576), (0.537, 0.573),
+                 (0.533, 0.547), (0.578, 0.579), (0.514, 0.526), (0.542, 0.568), (0.544, 0.573),
+                 (0.553, 0.548), (0.550, 0.611), (0.519, 0.552), (0.542, 0.594), (0.543, 0.597),
+                 (0.534, 0.609), (0.547, 0.545), (0.555, 0.590), (0.550, 0.569), (0.534, 0.575),
+                 (0.553, 0.573), (0.555, 0.567), (0.525, 0.554), (0.535, 0.543), (0.527, 0.532),
+                 (0.550, 0.576), (0.547, 0.571), (0.571, 0.589), (0.552, 0.589), (0.570, 0.579),
+                 (0.536, 0.533), (0.531, 0.571), (0.544, 0.563), (0.547, 0.568), (0.555, 0.587),
+                 (0.564, 0.598), (0.568, 0.588), (0.562, 0.589), (0.571, 0.585), (0.566, 0.558)]
+    BROTHER_GLASSES = [(0.604, 0.578), (0.579, 0.546), (0.586, 0.517), (0.590, 0.513), (0.607, 0.507),
+                       (0.598, 0.529), (0.626, 0.528), (0.614, 0.530), (0.593, 0.525), (0.608, 0.514),
+                       (0.626, 0.546), (0.592, 0.518), (0.600, 0.506), (0.596, 0.577), (0.620, 0.565),
+                       (0.649, 0.603), (0.587, 0.523), (0.603, 0.518), (0.592, 0.558), (0.599, 0.542),
+                       (0.616, 0.550), (0.585, 0.556), (0.618, 0.549), (0.622, 0.575), (0.600, 0.546),
+                       (0.592, 0.548), (0.601, 0.555), (0.614, 0.564), (0.604, 0.546), (0.619, 0.567),
+                       (0.635, 0.551), (0.649, 0.561), (0.612, 0.564), (0.602, 0.560), (0.627, 0.570),
+                       (0.646, 0.564), (0.660, 0.559), (0.630, 0.549), (0.624, 0.543), (0.602, 0.548)]
+    OWNER_2 = [(0.850, 0.756), (0.849, 0.741), (0.835, 0.782), (0.851, 0.778), (0.864, 0.760)]
     OWNER_SELF_P10 = 0.758  # measured at that enrolment
 
     def setUp(self):
@@ -203,11 +225,23 @@ class RealScoresTests(unittest.TestCase):
             fooled_sface = [(0.99, s, v) for _, s, v in window]
             self.assertFalse(self.scan.decide(fooled_sface, self.cfg, self.bar))
 
+    def test_brother_after_glasses_enrolment(self):
+        g = type("G", (), {"meta": {"strong_self_p10": 0.755}})()
+        bar = self.scan.strong_bar(g, self.cfg)
+        self.assertGreaterEqual(bar, 0.67)
+        for frames in (self.BROTHER_2, self.BROTHER_GLASSES):
+            for window in self.windows(frames):
+                fooled_sface = [(0.99, s, v) for _, s, v in window]
+                self.assertFalse(self.scan.decide(fooled_sface, self.cfg, bar))
+                med = sorted(s for _, s, _ in window)[2]
+                self.assertGreaterEqual(bar - med, 0.07)
+        self.assertTrue(self.scan.decide([(w, s, self.vec) for w, s in self.OWNER_2], self.cfg, bar))
+
     def test_margins(self):
         brother_best = max(s for _, s in self.BROTHER)
         owner_worst = min(s for _, s in self.OWNER)
         self.assertGreaterEqual(self.bar - brother_best, 0.08)
-        self.assertGreaterEqual(owner_worst - self.bar, 0.10)
+        self.assertGreaterEqual(owner_worst - self.bar, 0.07)
 
     def test_settings_cant_lower_the_floor(self):
         self.cfg.strong_accept = 0.30

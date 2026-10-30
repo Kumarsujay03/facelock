@@ -87,8 +87,9 @@ SFACE_FLOOR = 0.58
 def personal_bar(self_p10):
     """A face's own AuraFace bar from enrolment: how closely it matches itself
     (90% of frames at or above self_p10) minus a margin for other light and
-    days, kept between the floor and 0.72."""
-    return round(min(max(self_p10 - 0.12, STRONG_FLOOR), 0.72), 3)
+    days, kept between the floor and 0.75. (1.2.1-1.2.5 used a 0.12 margin; a
+    look-alike brother wearing glasses then came within 0.04 of the bar.)"""
+    return round(min(max(self_p10 - 0.08, STRONG_FLOOR), 0.75), 3)
 
 
 # The bar adapts to the user's own unlocks, slowly: it only collects their
@@ -101,7 +102,7 @@ ADAPT_KEEP = 30       # unlock medians remembered
 ADAPT_MIN_MEDIAN = 0.70
 ADAPT_MARGIN = 0.12
 ADAPT_STEP = 0.005
-ADAPT_CAP = 0.72
+ADAPT_CAP = 0.75
 
 
 def next_bar(current, medians):

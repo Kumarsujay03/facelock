@@ -39,7 +39,7 @@ and password keep working at the same time; whichever succeeds first wins.
 Download the latest release, or clone the repository, then:
 
 ```sh
-tar xf facelock-1.2.5.tar.gz && cd facelock-1.2.5     # or: git clone https://github.com/Kumarsujay03/facelock && cd facelock
+tar xf facelock-1.2.6.tar.gz && cd facelock-1.2.6     # or: git clone https://github.com/Kumarsujay03/facelock && cd facelock
 sudo ./install.sh
 ```
 
