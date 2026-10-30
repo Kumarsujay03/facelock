@@ -381,6 +381,132 @@ class GroupBarTests(unittest.TestCase):
         self.assertEqual(bars[1], 0.64)
 
 
+def condition(center, n, sim, seed):
+    """n samples of one face in one condition: each `sim` from its centre."""
+    return np.array([toward(center, unit_dim(1, seed + i, 512)[0], sim) for i in range(n)])
+
+
+class MigrationTests(unittest.TestCase):
+    """Enrolments from 1.2.x have no groups: they are split automatically on
+    the first load after the update, with no new enrolment or improve."""
+
+    def setUp(self):
+        from facelock import scan
+        self.scan = scan
+        self.cfg = config.Config()
+        self.face = unit_dim(1, 200, 512)[0]
+        self.bright_c = toward(self.face, unit_dim(1, 201, 512)[0], 0.9)
+        self.dim_c = toward(self.face, unit_dim(1, 202, 512)[0], 0.6)  # dim light: far from bright
+
+    def legacy(self, user, rows, meta):
+        """Write face data the way 1.2.7 did: no group file, no groups."""
+        store.save_enrolment(user, unit(len(rows), 203), meta, strong=rows)
+        d = os.path.join(TMP, user)
+        os.unlink(os.path.join(d, "enrolled_group.npy"))
+        m = store.load_meta(user)
+        m.pop("groups", None)
+        with open(os.path.join(d, "meta.json"), "w") as f:
+            import json
+            json.dump(m, f)
+
+    def probe_window(self, g, center, sim, seed):
+        out = []
+        for i in range(5):
+            v = toward(center, unit_dim(1, seed + i, 512)[0], sim)
+            s, _, _, grp, bar = self.scan.strong_score(v, g, self.cfg)
+            out.append((0.8, s, v, bar, grp))
+        return out
+
+    def test_friends_case_is_fixed_without_new_captures(self):
+        rows = np.vstack([condition(self.bright_c, 16, 0.85, 300), condition(self.dim_c, 32, 0.8, 400)])
+        self.legacy("jon", rows, {"strong_self_p10": 0.83})   # 1.2.7 raised it: bar 0.75
+        g = store.Gallery("jon")
+        groups = self.scan.groups_of(g)
+        self.assertEqual(len(groups), 2)
+        bars = self.scan.strong_bars(g, self.cfg)
+        self.assertTrue(all(0.62 <= b <= 0.75 for b in bars.values()))
+        # he unlocks in dim light (scores like his real 0.62-0.70) and in good light
+        self.assertTrue(self.scan.decide(self.probe_window(g, self.dim_c, 0.82, 500), self.cfg))
+        self.assertTrue(self.scan.decide(self.probe_window(g, self.bright_c, 0.85, 600), self.cfg))
+        # saved, so the split is stable from now on
+        self.assertTrue(os.path.exists(os.path.join(TMP, "jon", "enrolled_group.npy")))
+        self.assertIn("groups", store.load_meta("jon"))
+
+    def test_single_condition_keeps_a_strict_bar(self):
+        rows = condition(self.bright_c, 32, 0.88, 700)
+        self.legacy("kim", rows, {"strong_self_p10": 0.755})  # the owner's real enrolment: 0.675
+        g = store.Gallery("kim")
+        self.assertEqual(len(self.scan.groups_of(g)), 1)
+        self.assertGreaterEqual(self.scan.strong_bar(g, self.cfg), 0.67)
+
+    def test_small_groups_fold_into_neighbours(self):
+        # regression: folding a small group into a later one once crashed
+        rows = np.vstack([condition(self.bright_c, 10, 0.9, 800), condition(self.dim_c, 2, 0.9, 820),
+                          condition(unit_dim(1, 830, 512)[0], 3, 0.9, 840), condition(self.dim_c, 10, 0.9, 850)])
+        ids, groups = store.auto_groups(rows)
+        sizes = np.bincount(ids)
+        self.assertTrue((sizes >= store.GROUP_MIN).all())
+        self.assertEqual(len(groups), len(sizes))
+
+
+class InvariantTests(unittest.TestCase):
+    """Rules that must hold whatever the enrolment, so a user is never
+    locked out of a condition they enrolled, and nobody gets a weak bar."""
+
+    def setUp(self):
+        from facelock import scan
+        self.scan = scan
+        self.cfg = config.Config()
+
+    def gallery_with(self, user, captures):
+        """captures: [(centre, spread)] enrolled one after another."""
+        first = True
+        for i, (c, sim) in enumerate(captures):
+            rows = condition(c, 16, sim, 1000 + 50 * i)
+            p10 = float(np.percentile([np.sort(rows @ r)[::-1][1:4].mean() for r in rows], 10))
+            if first:
+                store.save_enrolment(user, unit(16, 1001), {"strong_self_p10": p10}, strong=rows)
+                first = False
+            else:
+                store.add_enrolment(user, unit(16, 1002 + i), rows, p10=p10)
+        return store.Gallery(user)
+
+    def test_every_enrolled_condition_unlocks_and_bars_stay_in_range(self):
+        rng = np.random.default_rng(5)
+        for trial in range(6):
+            face = unit_dim(1, 2000 + trial, 512)[0]
+            captures = [(toward(face, unit_dim(1, 2100 + 10 * trial + j, 512)[0], float(rng.uniform(0.55, 0.95))),
+                         float(rng.uniform(0.80, 0.92))) for j in range(int(rng.integers(1, 4)))]
+            g = self.gallery_with(f"inv{trial}", captures)
+            bars = self.scan.strong_bars(g, self.cfg)
+            self.assertTrue(all(0.62 <= b <= 0.75 for b in bars.values()), bars)
+            for j, (c, sim) in enumerate(captures):
+                # a live face in that condition matches its samples about as
+                # well as they match each other
+                window = []
+                for i in range(5):
+                    v = toward(c, unit_dim(1, 3000 + 100 * trial + 10 * j + i, 512)[0], sim)
+                    s, _, _, grp, bar = self.scan.strong_score(v, g, self.cfg)
+                    window.append((0.8, s, v, bar, grp))
+                self.assertTrue(self.scan.decide(window, self.cfg), (trial, j, [round(w[1], 3) for w in window], bars))
+
+    def test_improve_never_changes_existing_bars(self):
+        face = unit_dim(1, 4000, 512)[0]
+        g = self.gallery_with("lee", [(face, 0.9)])
+        before = self.scan.strong_bars(g, self.cfg)
+        store.add_enrolment("lee", unit(16, 4001), condition(face, 16, 0.85, 4100), p10=0.9)
+        after = self.scan.strong_bars(store.Gallery("lee"), self.cfg)
+        self.assertEqual({k: after[k] for k in before}, before)
+
+    def test_strangers_never_pass(self):
+        face = unit_dim(1, 5000, 512)[0]
+        g = self.gallery_with("max", [(face, 0.9), (toward(face, unit_dim(1, 5001, 512)[0], 0.6), 0.85)])
+        for i in range(50):
+            v = unit_dim(1, 6000 + i, 512)[0]  # unrelated faces: near-zero similarity
+            s, _, _, _, bar = self.scan.strong_score(v, g, self.cfg)
+            self.assertLess(s, bar)
+
+
 class BlinkTests(unittest.TestCase):
     def run_seq(self, seq, drop=0.8, shift=None):
         b = liveness.BlinkDetector(drop)

@@ -80,7 +80,7 @@ class Gallery:
             self.enrolled_group = np.load(os.path.join(self.dir, "enrolled_group.npy"),
                                           allow_pickle=False).astype(np.int32).reshape(-1)
         except (OSError, ValueError):
-            self.enrolled_group = None  # older enrolment: one group
+            self.enrolled_group = None
         self.learned = self._load("learned2.npy")
         self.learned_strong = self._load("learned_strong.npy", STRONG_DIM)
         self.others = self._load("others.npy")
@@ -94,6 +94,36 @@ class Gallery:
         # came from a different measure and are ignored
         cal = self.meta.get("blink")
         self.blink = (float(cal["drop"]), float(cal["rise"])) if isinstance(cal, dict) else None
+        if len(self.enrolled_strong) and (self.enrolled_group is None
+                                          or len(self.enrolled_group) != len(self.enrolled_strong)
+                                          or not isinstance(self.meta.get("groups"), dict)):
+            self._split_into_groups()
+
+    def _split_into_groups(self):
+        """An enrolment from before groups (1.2.x): split its samples into
+        groups by how they agree (good light, dim light, glasses...) and give
+        each group the bar its own samples support, as a new capture would
+        get. Saved once if possible (as root); else used for this run only."""
+        from .scan import personal_bar, sessions_of
+        legacy = float(sessions_of(self).get("0", {}).get("bar") or 0)  # the old single bar, capped
+        ids, groups = auto_groups(self.enrolled_strong)
+        for info in groups.values():
+            # the group's own samples set its bar; it keeps the old (capped)
+            # bar where its samples clearly support it (median - 0.05), so a
+            # well-lit group stays as strict as before and only a weaker
+            # condition (dim light) gets a lower one
+            own = personal_bar(info["p10"]) if info.get("p10") else 0
+            supported = min(legacy, info.get("median", 0) - 0.05)
+            info["bar"] = round(max(own, supported), 3)
+            info.pop("p10", None)
+        self.enrolled_group = ids
+        self.meta["groups"] = groups
+        try:
+            _save_ints(os.path.join(self.dir, "enrolled_group.npy"), ids)
+            update_meta(self.user, groups=groups, adapted_bar=None, unlock_medians=None,
+                        unlock_count=None, groups_from="auto-split of an older enrolment")
+        except OSError:
+            pass
 
     def _load(self, name, dim=SFACE_DIM):
         return _load(os.path.join(self.dir, name), dim)
@@ -168,6 +198,69 @@ def save_enrolment(user, embeddings, meta, strong=None):
                 adapted_bar=None, enrolled_at=time.strftime("%Y-%m-%d %H:%M:%S"))
 
 
+GROUP_JOIN = 0.60     # samples (groups) this similar on average are one condition
+GROUP_MIN = 4         # smaller groups join their closest neighbour
+
+
+def _self_scores(vecs):
+    """Each sample's mean similarity to its 3 closest others in the group."""
+    sims = vecs @ vecs.T
+    np.fill_diagonal(sims, -1)
+    k = min(3, len(vecs) - 1)
+    return np.sort(sims, axis=1)[:, ::-1][:, :k].mean(axis=1)
+
+
+def _self_p10(vecs):
+    """How closely a group's samples match the rest of the group: the 10th
+    percentile, over its samples, of each one's mean similarity to its 3
+    closest others (the same measure a capture's bar comes from, judged
+    conservatively: these samples were picked to differ from each other)."""
+    if len(vecs) < 2:
+        return None
+    return round(float(np.percentile(_self_scores(vecs), 10)), 3)
+
+
+def auto_groups(strong):
+    """Group samples by condition: average-linkage clustering on AuraFace
+    similarity, joining while groups agree at GROUP_JOIN on average, then
+    folding groups under GROUP_MIN samples into their closest group. Returns
+    (group id per row, {group id: {"p10": ...}})."""
+    strong = np.asarray(strong, np.float32)
+    n = len(strong)
+    clusters = [[i] for i in range(n)]
+    sims = strong @ strong.T
+
+    def link(a, b):
+        return float(sims[np.ix_(a, b)].mean())
+
+    while len(clusters) > 1:
+        best, pair = -2.0, None
+        for i in range(len(clusters)):
+            for j in range(i + 1, len(clusters)):
+                s = link(clusters[i], clusters[j])
+                if s > best:
+                    best, pair = s, (i, j)
+        if best < GROUP_JOIN:
+            break
+        i, j = pair
+        clusters[i] += clusters.pop(j)
+    while len(clusters) > 1 and min(len(c) for c in clusters) < GROUP_MIN:
+        small = min(range(len(clusters)), key=lambda c: len(clusters[c]))
+        rest = [c for c in range(len(clusters)) if c != small]
+        to = max(rest, key=lambda c: link(clusters[small], clusters[c]))
+        clusters[to] = clusters[to] + clusters[small]
+        clusters.pop(small)
+    clusters.sort(key=len, reverse=True)
+    ids = np.zeros(n, np.int32)
+    groups = {}
+    for gid, rows in enumerate(clusters):
+        ids[rows] = gid
+        p10 = _self_p10(strong[rows])
+        median = round(float(np.median(_self_scores(strong[rows]))), 3) if len(rows) > 1 else None
+        groups[str(gid)] = {k: v for k, v in (("p10", p10), ("median", median)) if v}
+    return ids, groups
+
+
 def _save_ints(path, array):
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
     try:
@@ -186,7 +279,7 @@ def _groups(g):
     ids = g.enrolled_group
     if ids is None or len(ids) != len(g.enrolled_strong):
         ids = np.zeros(len(g.enrolled_strong), np.int32)
-    return ids, {k: dict(v) for k, v in sessions_of(g).items()}
+    return np.asarray(ids, np.int32), {k: dict(v) for k, v in sessions_of(g).items()}
 
 
 ENROLLED_CAP = 48

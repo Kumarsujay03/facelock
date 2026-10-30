@@ -113,6 +113,7 @@ there) and apply from the next scan.
   by at most 0.005 towards your recent median minus 0.12 (and below your
   typical worst unlock), up to 0.75. Good-light unlocks never tighten the
   dim-light bar. Bars never go down; enrolling again resets them.
+  Enrolments from before 1.3 are split into groups automatically.
   `facelock status` shows every group's bar.
 - **Teach it on purpose:** `sudo facelock improve` captures your face again
   and adds it as a new group with its own bar, keeping everything learned.

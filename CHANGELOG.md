@@ -14,9 +14,17 @@
   with that group's bar. `improve` no longer raises a single global bar.
 - The adaptive bar works per group: good-light unlocks never tighten the
   dim-light bar.
-- Enrolments from 1.2.x keep working as one group, with its bar capped at
-  0.70 (1.2.7 could have raised it from one well-lit capture). For per-
-  condition bars: enrol again in good light, then `improve` in the others.
+- Enrolments from 1.2.x are split into groups automatically on the first
+  scan after updating; no new enrolment or improve is needed. Samples that
+  agree with each other (good light, dim light, glasses) become a group;
+  each group's bar comes from its own samples, keeping the old bar (at most
+  0.70, since 1.2.7 could have raised it from one well-lit capture) where
+  the samples clearly support it. On LFW faces: 0 of 900 stranger photos
+  passed any group's bar; 114 of 118 of the owners' photos from other years
+  passed.
+- New tests for rules that must always hold: every condition a user
+  enrolled unlocks, every bar is between 0.62 and 0.75, `improve` never
+  changes other groups' bars, strangers never pass.
 - `facelock status` and `stats` list every group and its bar.
 
 ## 1.2.7
