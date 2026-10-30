@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.7
+
+- `facelock improve` raises the user's personal bar when the new capture
+  shows their face is more consistent than measured at enrolment (never
+  lowers it). Every bar is measured per user; only the 0.62 floor is shared.
+
 ## 1.2.6
 
 **Security: wider margin after adding glasses frames.**

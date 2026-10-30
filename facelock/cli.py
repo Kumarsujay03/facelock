@@ -104,8 +104,14 @@ def cmd_improve(a):
         if not sys.stdin.isatty() or input("Add them? [y/N] ").strip().lower() not in ("y", "yes"):
             sys.exit("Not added.")
     count = store.add_enrolment(a.user, vectors, strong)
+    # the personal bar follows the user's own consistency: raise it if this
+    # capture matched itself more closely than the enrolment did, never lower
+    old_p10 = float(g.meta.get("strong_self_p10") or 0)
+    if meta.get("strong_self_p10", 0) > old_p10:
+        store.update_meta(a.user, strong_self_p10=meta["strong_self_p10"])
+    new_bar = scan.strong_bar(store.Gallery(a.user), cfg)
     print(f"Added. {count} enrolled samples now (they matched your enrolment at {match:.2f}); "
-          f"learned samples and your bar ({bar}) are kept.")
+          f"learned samples are kept. Your bar: {new_bar}" + (" (raised)" if new_bar > bar else "") + ".")
 
 
 def cmd_calibrate(a):
