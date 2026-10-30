@@ -46,7 +46,9 @@ ok "extension installed for the login screen"
 out=$(facelock status 2>&1) || { echo "$out"; fail "facelock status crashed"; }
 echo "$out" | grep -q "^facelock $(cat /opt/facelock/VERSION)" || fail "facelock status"
 for cmd in "stats" "keyring" "update --check" "--help"; do
-    out=$(facelock $cmd 2>&1); rc=$?
+    # (stats and keyring exit 1 on a fresh machine: no scans, no sealed
+    # password yet; that's fine, a crash isn't)
+    rc=0; out=$(facelock $cmd 2>&1) || rc=$?
     echo "$out" | grep -q "Traceback" && { echo "$out"; fail "facelock $cmd crashed"; }
     [ $rc -le 1 ] || fail "facelock $cmd exited with $rc"
 done
