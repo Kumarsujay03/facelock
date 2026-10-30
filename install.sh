@@ -50,8 +50,9 @@ https_help() {
     echo "Fix that, then run this installer again."
     exit 1
 }
+# build $1 if it's missing or older than its source $2
 need_build() {
-    [ ! -f "$1" ] || [ "$2" -nt "$1" ]
+    [ ! -f "$1" ] || [ -n "$(find "$2" -newer "$1" 2>/dev/null)" ]
 }
 packages() {
     # build tools, PAM and systemd headers, Python venv, curl
@@ -191,6 +192,7 @@ chmod 644 /etc/pam.d/gdm-face
 
 echo "== GNOME Shell extension"
 rm -rf "/usr/share/gnome-shell/extensions/$UUID"
+install -d -m 755 /usr/share/gnome-shell/extensions
 cp -r "$HERE/extension/$UUID" /usr/share/gnome-shell/extensions/
 chmod -R a+rX "/usr/share/gnome-shell/extensions/$UUID"
 if [ -d /etc/dconf/db ]; then
