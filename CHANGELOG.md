@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.4
+
+- The installer checks that HTTPS downloads work before changing anything,
+  and explains certificate errors (an intercepting VPN, proxy or antivirus)
+  instead of stopping halfway with curl's message.
+- README: how to trust a known HTTPS-intercepting proxy.
+
 ## 1.0.3
 
 - Esc during a face scan stops it: the camera turns off at once and the

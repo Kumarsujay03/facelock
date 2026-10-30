@@ -39,6 +39,17 @@ for f in /etc/pam.d/gdm-password /usr/lib/pam.d/gdm-password; do
 done
 [ -n "$GDM_PASSWORD" ] || { echo "No gdm-password PAM file: is this GDM?"; exit 1; }
 
+https_help() {
+    echo
+    echo "Can't download over HTTPS: $1"
+    echo "This laptop doesn't trust the certificate it receives. Usually a VPN,"
+    echo "company or college proxy, or antivirus web filter is intercepting HTTPS"
+    echo "(it shows as 'self-signed certificate in certificate chain'), or the"
+    echo "trusted certificates are out of date. See \"Troubleshooting\" in README.md:"
+    echo "  https://github.com/Kumarsujay03/facelock#troubleshooting"
+    echo "Fix that, then run this installer again."
+    exit 1
+}
 need_build() {
     [ ! -f "$1" ] || [ "$2" -nt "$1" ]
 }
@@ -59,6 +70,13 @@ packages() {
         exit 1
     fi
 }
+# the face models and Python packages come over HTTPS: check that works
+# before changing anything
+if command -v curl >/dev/null 2>&1 && [ "$MODE" = install ]; then
+    err=$(curl -fsS --max-time 20 -o /dev/null https://github.com/opencv/opencv_zoo 2>&1) ||
+        https_help "$(echo "$err" | head -1)"
+fi
+
 if need_build "$HERE/pam/pam_face.so" "$HERE/pam/pam_face.c" ||
    need_build "$HERE/keyring/pam_facelock_keyring.so" "$HERE/keyring/pam_facelock_keyring.c" ||
    ! python3 -c 'import venv, ensurepip' 2>/dev/null; then
@@ -83,10 +101,11 @@ install -m 644 "$HERE/models/SHA256SUMS" "$DEST/models/"
 while read -r sum file; do
     if [ -f "$HERE/models/$file" ]; then
         install -m 644 "$HERE/models/$file" "$DEST/models/$file"
-    elif ! echo "$sum  $DEST/models/$file" | sha256sum -c --quiet 2>/dev/null; then
+    elif ! echo "$sum  $DEST/models/$file" | sha256sum -c --quiet >/dev/null 2>&1; then
         url=$(grep -F "$file" "$HERE/models/URLS")
         echo "   downloading $file"
-        curl -fsSL -o "$DEST/models/$file.part" "${url#* }"
+        err=$(curl -fsSL --retry 2 -o "$DEST/models/$file.part" "${url#* }" 2>&1) ||
+            { rm -f "$DEST/models/$file.part"; https_help "$(echo "$err" | head -1)"; }
         mv "$DEST/models/$file.part" "$DEST/models/$file"
     fi
 done < "$HERE/models/SHA256SUMS"

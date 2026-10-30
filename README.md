@@ -37,7 +37,7 @@ and password keep working at the same time; whichever succeeds first wins.
 Download the latest release, or clone the repository, then:
 
 ```sh
-tar xf facelock-1.0.3.tar.gz && cd facelock-1.0.3     # or: git clone https://github.com/Kumarsujay03/facelock && cd facelock
+tar xf facelock-1.0.4.tar.gz && cd facelock-1.0.4     # or: git clone https://github.com/Kumarsujay03/facelock && cd facelock
 sudo ./install.sh
 ```
 
@@ -176,8 +176,18 @@ and Python packages over HTTPS too, so fix this first:
 3. See who signed what you received:
    `echo | openssl s_client -connect github.com:443 -servername github.com 2>/dev/null | grep 'i:'`
    It should name Sectigo / USERTrust. A VPN, company proxy or antivirus name
-   instead (Cloudflare WARP, Zscaler, Kaspersky...) means it intercepts HTTPS:
-   turn it off while installing, or install its root certificate.
+   instead (Cloudflare WARP, Zscaler, Kaspersky, Fortinet...), or the error
+   "self-signed certificate in certificate chain", means something intercepts
+   HTTPS. Either turn it off while installing, or make the system trust it:
+   save its root certificate (the last one printed by
+   `echo | openssl s_client -showcerts -connect github.com:443 -servername github.com`,
+   from `-----BEGIN CERTIFICATE-----` to `-----END CERTIFICATE-----`) as
+   `/usr/local/share/ca-certificates/proxy.crt`, then run
+   `sudo update-ca-certificates`. Only do that for a proxy you know and trust.
+
+   `git clone` can work while the installer fails, because the installer runs
+   as root with the system's certificates, while your own shell may carry
+   extra ones (for example from Conda or a company setup).
 
 **The camera isn't found or "Camera unavailable".** Close apps using the
 camera (browsers, video calls); `facelock status` lists the cameras it sees.
