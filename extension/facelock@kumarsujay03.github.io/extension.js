@@ -12,12 +12,17 @@
 // - In the dark ("facelock:dark") the screen turns white at full brightness
 //   for a few seconds to light your face, then goes back.
 // - A failed face scan never resets or blocks the password prompt.
+// - Esc during a scan stops it (camera off at once) until the next wake.
+// - The white light comes only after a first try in the room's own light
+//   (facelockd waits light_after seconds), and at most once until the screen
+//   has been off again.
 // - The icon: with the Fingerprint Icon extension, its badge is the one icon
 //   on screen and shows face unlock too (globalThis.__facelockBus carries the
 //   face events to it); without it, this extension shows its own face badge.
 
 import Cairo from 'cairo';
 import Clutter from 'gi://Clutter';
+import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Graphene from 'gi://Graphene';
 import St from 'gi://St';
@@ -30,6 +35,8 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {wiggle} from 'resource:///org/gnome/shell/misc/animationUtils.js';
 
 const FACE_SERVICE = 'gdm-face';
+// facelockd's stop-only socket
+const CONTROL_SOCKET = '/run/facelock/control';
 // what a scan that ends without unlocking tells you
 const STOP_TEXT = {
     failures: 'Use fingerprint or password',
@@ -384,7 +391,8 @@ class FaceLight {
         this._rampBrightness(1.0, LIGHT_IN);
         this._maxId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, LIGHT_MAX, () => {
             this._maxId = 0;
-            this.turnOff();
+            if (this.turnOff())
+                this.onTimeout?.();
             return GLib.SOURCE_REMOVE;
         });
         return true;
@@ -427,13 +435,26 @@ class FaceController {
         this._paused = false;
         this._badge = new FaceBadge();
         this._light = new FaceLight();
+        // the light went out by itself: the icon must know (it draws dark
+        // ink on the white light)
+        this._light.onTimeout = () => this._show('light', false);
         this._idle = global.backend.get_core_idle_monitor();
         this._watchIds = [];
 
         Main.screenShield?.connectObject(
             'locked-changed', () => this._onLockedChanged(),
-            'wake-up-screen', () => this._onWake('screen woke'),
+            'wake-up-screen', () => {
+                // back from a dark screen: the white light may help once more
+                this._litOnce = false;
+                this._onWake('screen woke');
+            },
             this);
+        global.stage.connectObject('captured-event', (_stage, event) => {
+            if (event.type() === Clutter.EventType.KEY_PRESS &&
+                event.get_key_symbol() === Clutter.KEY_Escape && faceBus().scanning)
+                this._escape();
+            return Clutter.EVENT_PROPAGATE;
+        }, this);
         if (Main.screenShield?.locked || Main.sessionMode.isGreeter)
             this._armAfter(Main.sessionMode.isGreeter ? 0 : LOCK_GRACE);
     }
@@ -491,6 +512,7 @@ class FaceController {
         if (Main.screenShield.locked) {
             trace('locked');
             this._paused = false;
+            this._litOnce = false;
             this._armAfter(LOCK_GRACE);
         } else {
             trace('unlocked');
@@ -540,8 +562,33 @@ class FaceController {
         this._watchIds.push(idleId);
     }
 
+    // Esc during a scan: stop it now (camera off), light off, fingerprint
+    // icon back; the Esc itself doesn't count as a wake
+    _escape() {
+        trace('Esc: stopping the face scan');
+        this._escapedAt = now();
+        this._wantUntil = 0;
+        this._lightOff(true);
+        try {
+            const client = new Gio.SocketClient();
+            client.connect_async(Gio.UnixSocketAddress.new(CONTROL_SOCKET), null, (c, res) => {
+                try {
+                    const conn = c.connect_finish(res);
+                    conn.get_output_stream().write_all(new TextEncoder().encode('STOP\n'), null);
+                    conn.close(null);
+                } catch (e) {
+                    console.error(`facelock: could not stop the scan: ${e}`);
+                }
+            });
+        } catch (e) {
+            console.error(`facelock: could not stop the scan: ${e}`);
+        }
+    }
+
     _onWake(why) {
         if (!this._active || now() - (this._succeededAt ?? -1e9) < AFTER_SUCCESS)
+            return;
+        if (now() - (this._escapedAt ?? -1e9) < IDLE_BEFORE_WAKE)
             return;
         if (this._paused) {
             trace(`${why}: face unlock paused until an unlock`);
@@ -613,7 +660,11 @@ class FaceController {
             this._show('scanning');
             break;
         case 'dark':
-            this._lightOn();
+            // once until the screen has been off; never after Esc
+            if (!this._litOnce && now() - (this._escapedAt ?? -1e9) > WANT_WINDOW) {
+                this._litOnce = true;
+                this._lightOn();
+            }
             break;
         case 'light':
             this._lightOff();
@@ -653,7 +704,8 @@ class FaceController {
         faceBus().scanning = false;
         this._lightOff(true);
         if (!this._active || this._paused || (this._resumes ?? 0) >= MAX_RESUMES ||
-            now() - (this._succeededAt ?? -1e9) < AFTER_SUCCESS)
+            now() - (this._succeededAt ?? -1e9) < AFTER_SUCCESS ||
+            now() - (this._escapedAt ?? -1e9) < WANT_WINDOW)
             return;
         this._resumes = (this._resumes ?? 0) + 1;
         trace('face scan cut off by a restarted sign-in check; scanning again');
@@ -665,6 +717,7 @@ class FaceController {
         faceBus().scanning = false;
         verifier._faceRunning = false;
         this._lightOff();
+        this._show('light', this._light.on); // keep the icon's ink in step
         if (now() - (this._succeededAt ?? -1e9) > AFTER_SUCCESS)
             this._show('stopped', 'ended');
     }
@@ -685,6 +738,7 @@ class FaceController {
     destroy() {
         this._clearWatches();
         Main.screenShield?.disconnectObject(this);
+        global.stage.disconnectObject(this);
         this._light.destroy();
         this._badge.destroy();
         this._verifiers.clear();

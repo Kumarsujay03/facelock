@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.3
+
+- Esc during a face scan stops it: the camera turns off at once and the
+  icon goes back to the fingerprint. The next wake scans again.
+- The white light is now a second try: face unlock first looks in the
+  room's own light for 1.5 seconds (`light_after`), and the screen lights up
+  at most once until it has been off again.
+- Fixed: when the white light ended by itself, the lock screen icon could
+  stay in dark ink.
+
 ## 1.0.2
 
 - Fixed: if the lock screen restarted its sign-in check during a face scan

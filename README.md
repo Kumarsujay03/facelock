@@ -37,7 +37,7 @@ and password keep working at the same time; whichever succeeds first wins.
 Download the latest release, or clone the repository, then:
 
 ```sh
-tar xf facelock-1.0.2.tar.gz && cd facelock-1.0.2     # or: git clone https://github.com/Kumarsujay03/facelock && cd facelock
+tar xf facelock-1.0.3.tar.gz && cd facelock-1.0.3     # or: git clone https://github.com/Kumarsujay03/facelock && cd facelock
 sudo ./install.sh
 ```
 
@@ -63,7 +63,8 @@ Log out and back in once so GNOME loads the extension. Then lock the screen
 | A key, the mouse or the touchpad after a moment of quiet, opening the lid | One scan, about half a second when it recognises you. |
 | Just locked with Super+L | No scan for the first 2 seconds. |
 | Login screen after boot or logout | Scans as soon as your user is shown. |
-| Dark room | The screen fades to white at full brightness for a moment, then back. |
+| Dark room | After a first try in the room's light, the screen fades to white at full brightness for a moment, then back. Once until the screen has been off. |
+| Esc during a scan | Stops it: camera off, back to fingerprint and password. |
 | Not recognised | The face icon shakes: "Try again". |
 | 3 failed tries | "Use fingerprint or password". Face unlock waits until you have unlocked another way. |
 | No face in view | Nothing counts as a failure; the next wake scans again. |

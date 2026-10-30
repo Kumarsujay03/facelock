@@ -67,6 +67,7 @@ OUTCOME = {
     "failures": "not recognised",
     "timeout": "no face found",
     "cancelled": "unlocked another way",
+    "stopped": "stopped with Esc",
 }
 
 

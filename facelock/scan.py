@@ -49,6 +49,7 @@ def run(engine, cfg, gallery, emit=lambda s: None, alive=lambda: True,
     matched_at = None
     lumas = []
     live = []                 # brightness of frames since the picture started
+    live_from = None
     blink_asked = False
     t = 0.0
     try:
@@ -68,13 +69,15 @@ def run(engine, cfg, gallery, emit=lambda s: None, alive=lambda: True,
             lum = luma(frame)
             lumas.append(lum)
             # dark room: light the face with the screen, and give the camera
-            # longer. Only once the picture has really started (right after
-            # boot the first frames are pure black for a while) and the
-            # exposure had a moment to adapt, and not when a face is already
-            # matching anyway.
+            # longer. Only as a second try: once the picture has really
+            # started (right after boot the first frames are pure black for a
+            # while) and the camera has had cfg.light_after seconds to find
+            # and match a face in the room's own light.
             if lum >= 2.0 or t > 1.5:
                 live.append(lum)
+                live_from = t if live_from is None else live_from
             if (cfg.lowlight and not res.dark and len(live) >= 10
+                    and t - live_from >= cfg.light_after
                     and float(np.median(live[-5:])) < cfg.dark_luma
                     and res.best < cfg.threshold):
                 res.dark = True

@@ -35,6 +35,7 @@ class Config:
     liveness: str = "observe"     # "blink" (required), "observe" (logged only) or "off"
     # [lowlight]
     dark_luma: float = 55.0       # mean brightness (0-255) below which the screen lights up
+    light_after: float = 1.5      # seconds of trying without the light first
     lowlight: bool = True
     # [update]
     auto_update: bool = False
@@ -45,7 +46,7 @@ class Config:
                   "relearn_min", "relearn_seconds"],
         "unlock": ["scan_seconds", "attempt_seconds", "max_failures", "min_face_px"],
         "liveness": ["liveness"],
-        "lowlight": ["dark_luma", "lowlight"],
+        "lowlight": ["dark_luma", "lowlight", "light_after"],
         "update": ["auto"],
     }
 

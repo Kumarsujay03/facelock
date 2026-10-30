@@ -116,6 +116,29 @@ class Daemon:
         self.engine = Engine()
         self.camera_lock = threading.Lock()
         self.lockouts = Lockouts()
+        self.stop = threading.Event()   # Esc on the lock screen: end the scan now
+
+    def _control(self, path):
+        """A second socket anyone may use, for one thing only: "STOP" ends
+        the running scan (the lock screen sends it when you press Esc)."""
+        try:
+            os.unlink(path)
+        except FileNotFoundError:
+            pass
+        srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        srv.bind(path)
+        os.chmod(path, 0o666)
+        srv.listen(4)
+        while True:
+            conn, _ = srv.accept()
+            with conn:
+                try:
+                    conn.settimeout(2)
+                    if conn.recv(16).strip() == b"STOP":
+                        self.stop.set()
+                        conn.sendall(b"OK\n")
+                except OSError:
+                    pass
 
     def serve(self, path=config.SOCKET_PATH):
         os.makedirs(os.path.dirname(path), mode=0o755, exist_ok=True)
@@ -128,6 +151,8 @@ class Daemon:
         srv.bind(path)
         os.umask(old)
         srv.listen(4)
+        threading.Thread(target=self._control, args=(os.path.join(os.path.dirname(path), "control"),),
+                         daemon=True).start()
         log.info("listening on %s (models loaded, cameras: %s)", path,
                  ", ".join(f"{p} {c}" for p, c in camera.candidates()) or "none")
         while True:
@@ -172,6 +197,8 @@ class Daemon:
                 pass
 
         def alive():
+            if self.stop.is_set():
+                return False
             # the PAM side closes the socket when the lock screen cancels
             r, _, _ = select.select([conn], [], [], 0)
             if not r:
@@ -197,11 +224,15 @@ class Daemon:
         if not self.camera_lock.acquire(timeout=3):
             send("UNAVAIL camera busy")
             return
+        self.stop.clear()
         try:
             res = scan.run(self.engine, cfg, gallery, emit, alive,
                            failures_left=cfg.max_failures - failures)
         finally:
             self.camera_lock.release()
+        if self.stop.is_set() and not res.ok:
+            res.reason = "stopped"
+            self.stop.clear()
         total = self.lockouts.add(user, res.failures)
         learned = False
         if res.ok:
@@ -227,8 +258,9 @@ class Daemon:
             if res.ok:
                 emit("matched")
                 send("OK")
-            elif res.reason == "cancelled":
-                send("FAIL cancelled")
+            elif res.reason in ("cancelled", "stopped"):
+                emit(f"failed:{res.reason}")
+                send(f"FAIL {res.reason}")
             else:
                 emit("paused" if total >= cfg.max_failures else f"failed:{res.reason}")
                 send(f"FAIL {res.reason}")
