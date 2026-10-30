@@ -1,7 +1,11 @@
 """Per-user face data in /var/lib/facelock/<user>/ (root only).
 
 enrolled.npy  embeddings from enrolment, never changed by learning
-learned.npy   embeddings added after confident unlocks, capped
+learned2.npy  embeddings added after strong unlocks, capped
+others.npy    faces that are NOT this user (facelock add-other): refused
+
+learned.npy from facelock 1.0.x is deleted unread: its learning rules were
+too loose and could take in a look-alike's face.
 """
 import json
 import os
@@ -55,7 +59,14 @@ class Gallery:
         self.user = user
         self.dir = _dir(user)
         self.enrolled = _load(os.path.join(self.dir, "enrolled.npy"))
-        self.learned = _load(os.path.join(self.dir, "learned.npy"))
+        old = os.path.join(self.dir, "learned.npy")
+        if os.path.exists(old):
+            try:
+                os.unlink(old)
+            except OSError:
+                pass
+        self.learned = _load(os.path.join(self.dir, "learned2.npy"))
+        self.others = _load(os.path.join(self.dir, "others.npy"))
         self.meta = load_meta(user)
         # (drop, rise) from the blink calibration; older "blink_drop" values
         # came from a different measure and are ignored
@@ -75,7 +86,7 @@ class Gallery:
         most like the others (it adds the least)."""
         # reload first: the service may have learned something since this
         # gallery was read
-        self.learned = _load(os.path.join(self.dir, "learned.npy"))
+        self.learned = _load(os.path.join(self.dir, "learned2.npy"))
         learned = np.vstack([self.learned, vec[None, :]])
         if len(learned) > cap:
             sims = learned @ learned.T
@@ -85,15 +96,27 @@ class Gallery:
             redundancy[-1] = -2
             learned = np.delete(learned, int(np.argmax(redundancy)), axis=0)
         self.learned = learned
-        _save(os.path.join(self.dir, "learned.npy"), learned)
+        _save(os.path.join(self.dir, "learned2.npy"), learned)
+
+    def add_others(self, vectors):
+        self.others = np.vstack([self.others, np.asarray(vectors, np.float32)])
+        _save(os.path.join(self.dir, "others.npy"), self.others)
+
+    def clear_others(self):
+        self.others = np.zeros((0, 128), np.float32)
+        try:
+            os.unlink(os.path.join(self.dir, "others.npy"))
+        except FileNotFoundError:
+            pass
 
 
 def save_enrolment(user, embeddings, meta):
     path = _dir(user, create=True)
     _save(os.path.join(path, "enrolled.npy"), np.asarray(embeddings))
-    learned = os.path.join(path, "learned.npy")
-    if os.path.exists(learned):
-        os.unlink(learned)  # learned data belongs to the old enrolment
+    for name in ("learned.npy", "learned2.npy"):
+        learned = os.path.join(path, name)
+        if os.path.exists(learned):
+            os.unlink(learned)  # learned data belongs to the old enrolment
     update_meta(user, **meta, enrolled_at=time.strftime("%Y-%m-%d %H:%M:%S"))
 
 

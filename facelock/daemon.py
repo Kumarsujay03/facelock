@@ -18,7 +18,7 @@ import threading
 import time
 
 from . import camera, config, history, scan, store
-from .engine import Engine, similarity
+from .engine import Engine
 
 log = logging.getLogger("facelockd")
 
@@ -30,20 +30,14 @@ class Lockouts:
     """Failed attempts per user. After max_failures, face unlock pauses until
     the user's desktop is seen unlocked (password or fingerprint worked).
 
-    Also near misses: a scan that saw a face close to the user's but didn't
-    unlock (dim light, an unusual angle) is learned once the user proves it
-    was them by unlocking another way soon after. That teaches face unlock
-    exactly the conditions it struggles with."""
+    (facelock 1.0.x also learned "near misses" once the desktop was unlocked.
+    That was removed: it couldn't tell who unlocked, and so learned a
+    look-alike's face after the look-alike unlocked by face.)"""
 
     def __init__(self):
         self.failures = {}
-        self.pending = {}   # user -> (embedding, monotonic time, score)
         self.lock = threading.Lock()
         threading.Thread(target=self._watch, daemon=True).start()
-
-    def remember(self, user, vec, score):
-        with self.lock:
-            self.pending[user] = (vec, time.monotonic(), score)
 
     def get(self, user):
         with self.lock:
@@ -61,27 +55,12 @@ class Lockouts:
     def _watch(self):
         while True:
             time.sleep(3)
-            cfg = config.load()
             with self.lock:
-                now = time.monotonic()
-                for user in [u for u, (_, t, _) in self.pending.items() if now - t > cfg.relearn_seconds]:
-                    del self.pending[user]
-                users = {u for u, n in self.failures.items() if n} | set(self.pending)
+                users = [u for u, n in self.failures.items() if n]
             for user in users:
-                if not desktop_unlocked(user):
-                    continue
-                if self.get(user):
+                if desktop_unlocked(user):
                     log.info("%s unlocked another way; face unlock allowed again", user)
                     self.clear(user)
-                with self.lock:
-                    near = self.pending.pop(user, None)
-                if near:
-                    vec, _, score = near
-                    with GALLERY_LOCK:
-                        store.Gallery(user).learn(vec, cfg.max_learned)
-                    log.info("relearned %s: a scan scoring %.3f was followed by an unlock with "
-                             "fingerprint or password", user, score)
-                    history.record("relearn", user=user, best=round(score, 3))
 
 
 def desktop_unlocked(user):
@@ -241,18 +220,15 @@ class Daemon:
                 with GALLERY_LOCK:
                     gallery.learn(res.learn_vec, cfg.max_learned)
                 learned = True
-        elif (res.best_vec is not None and res.best >= cfg.relearn_min
-              and similarity(res.best_vec, gallery.enrolled) >= cfg.relearn_min - 0.05):
-            # maybe it was you in bad light: learned if you unlock another way soon
-            self.lockouts.remember(user, res.best_vec, res.best)
-        log.info("auth %s: %s best=%.3f failures=%d/%d first_face=%s elapsed=%ss luma=%s dark=%s blink=%s learned=%s scores=%s",
+        log.info("auth %s: %s best=%.3f failures=%d/%d first_face=%s elapsed=%ss luma=%s dark=%s blink=%s "
+                 "learned=%s other=%s scores=%s",
                  user, res.reason, res.best, total if not res.ok else 0, cfg.max_failures,
                  res.first_face_s and round(res.first_face_s, 2), res.elapsed, res.luma, res.dark,
-                 res.blinked, learned, res.scores[:12])
+                 res.blinked, learned, res.other_seen, res.scores[:12])
         history.record("scan", user=user, result=res.reason.split(":")[0], best=round(res.best, 3),
                        seconds=res.elapsed, first_face=res.first_face_s and round(res.first_face_s, 2),
                        failed=res.failures, dark=res.dark, blink=res.blinked, learned=learned,
-                       blink_frames=res.blink_frames, blink_peak=res.blink_peak,
+                       blink_frames=res.blink_frames, blink_peak=res.blink_peak, other=res.other_seen,
                        brightness=res.luma, **({"camera_error": res.reason} if res.reason.startswith("camera") else {}))
         try:
             if res.ok:

@@ -122,7 +122,20 @@ fi
 "$DEST/.venv/bin/python" -I -m compileall -q "$DEST/facelock" >/dev/null
 ln -sf "$DEST/bin/facelock" /usr/local/bin/facelock
 install -d -m 755 /etc/facelock
-[ -f /etc/facelock/facelock.conf ] || install -m 644 "$HERE/system/facelock.conf" /etc/facelock/facelock.conf
+CONF=/etc/facelock/facelock.conf
+if [ -f "$CONF" ] && ! grep -q '^accept[[:space:]]*=' "$CONF"; then
+    # settings from facelock 1.0.x: their match settings let a look-alike in.
+    # Keep a copy, install the new file, and carry over the other settings.
+    cp -a "$CONF" "$CONF.1.0"
+    install -m 644 "$HERE/system/facelock.conf" "$CONF"
+    for key in device scan_seconds attempt_seconds max_failures min_face_px liveness \
+               lowlight dark_luma light_after auto; do
+        value=$(sed -n "s/^${key}[[:space:]]*=[[:space:]]*//p" "$CONF.1.0" | head -1)
+        [ -n "$value" ] && sed -i "s|^${key}[[:space:]]*=.*|${key} = ${value}|" "$CONF"
+    done
+    echo "   new match settings (the old file is kept as $CONF.1.0)"
+fi
+[ -f "$CONF" ] || install -m 644 "$HERE/system/facelock.conf" "$CONF"
 install -m 644 "$HERE/system/facelockd.service" "$HERE/system/facelock-update.service" \
     "$HERE/system/facelock-update.timer" /etc/systemd/system/
 # scans logged before the history file existed (updates from 0.x)

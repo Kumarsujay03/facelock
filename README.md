@@ -39,7 +39,7 @@ and password keep working at the same time; whichever succeeds first wins.
 Download the latest release, or clone the repository, then:
 
 ```sh
-tar xf facelock-1.0.5.tar.gz && cd facelock-1.0.5     # or: git clone https://github.com/Kumarsujay03/facelock && cd facelock
+tar xf facelock-1.1.0.tar.gz && cd facelock-1.1.0     # or: git clone https://github.com/Kumarsujay03/facelock && cd facelock
 sudo ./install.sh
 ```
 
@@ -69,6 +69,7 @@ Log out and back in once so GNOME loads the extension. Then lock the screen
 | Esc during a scan | Stops it: camera off, back to fingerprint and password. |
 | Not recognised | The face icon shakes: "Try again". |
 | 3 failed tries | "Use fingerprint or password". Face unlock waits until you have unlocked another way. |
+| Someone added with `facelock add-other` | Refused, every time. |
 | No face in view | Nothing counts as a failure; the next wake scans again. |
 
 On the lock screen, a small icon at the top shows what's happening: a face
@@ -83,6 +84,8 @@ sudo facelock stats       how face unlock is doing: unlocks, failures, timings, 
 sudo facelock report      a plain-text report to send if something is wrong
 sudo facelock update      install the newest release (--check only looks)
 facelock status           version, camera, service, enrolled users
+sudo facelock add-other   capture someone who must NOT unlock (a look-alike relative)
+sudo facelock clear-others   forget those faces
 sudo facelock calibrate   redo the blink calibration
 sudo facelock remove      delete your face data
 ```
@@ -92,15 +95,15 @@ there) and apply from the next scan.
 
 ## How it learns
 
-- **After confident unlocks:** it saves the frame that differs most from what
-  it already knows (a new angle, new light, glasses). It keeps up to 40 and
-  replaces the most redundant one.
-- **After near misses:** when a scan saw a face that was probably you (score
-  ≥ 0.38; strangers score about 0.2) but didn't unlock, and you then unlock
-  with your fingerprint or password within a minute, that frame is learned.
-  This teaches it exactly the conditions it struggles with.
-- Your enrolment samples never change, and every learned sample must also
-  match them, so it can't drift towards someone else.
+- **Only from strong unlocks:** a frame is learned only if it is very close
+  to your *enrolled* face (0.68 or more; a look-alike brother reached 0.54).
+  It saves the frame that differs most from what it already knows (a new
+  angle, new light, glasses), keeps up to 40, and replaces the most redundant.
+- Learned samples only help a face that is already close to your enrolment,
+  and your enrolment samples never change.
+- facelock 1.0.x also learned from "near misses" and from weaker unlocks.
+  That let a look-alike relative's face be learned, so it was removed in
+  1.1.0, and data learned by 1.0.x is deleted when you update.
 
 ## Blink check (liveness): still being tested
 
@@ -233,6 +236,22 @@ and IR cameras are skipped. Set `device = /dev/videoN` in the config to choose
 one yourself.
 
 ## Security notes
+
+- **Look-alike relatives.** An ordinary webcam and face model can't always
+  tell close family apart. In facelock 1.0.x a brother unlocked his
+  sibling's laptop with scores of 0.48–0.54 against a match bar of 0.45, and
+  his face was then learned. 1.1.0 requires 0.58 on 3 frames (or 0.66 on
+  one against your enrolled face) and no longer learns weak or near-miss
+  scans. If someone in your home looks like you, add them as "not me":
+
+  ```sh
+  sudo facelock add-other     # they sit in front of the camera, you stay out of view
+  ```
+
+  Any face closer to them than to you is then refused, and `facelock stats`
+  counts those refusals. Then have them try the lock screen. If they still get
+  in, raise `accept` and `accept_instant` in `/etc/facelock/facelock.conf`,
+  or don't use face unlock on that laptop.
 
 - Face data never leaves the machine. Update checks are the only network
   access, and they come from the update timer, not the face service.

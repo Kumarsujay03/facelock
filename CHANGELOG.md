@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.1.0 (security fix)
+
+A look-alike relative could unlock: a brother unlocked his sibling's laptop
+three times, and his face was then learned as the owner's.
+
+- Stricter matching: a face must score 0.58 on 3 frames, or 0.66 on one
+  frame against the enrolled face (1.0.x: 0.45 on 2 frames).
+- Learned samples only count for a face already close to the enrolment.
+- Learning only from frames 0.68 or closer to the enrolled face.
+- Near-miss learning removed: it learned whatever face was in view when the
+  desktop was next unlocked, even if that unlock was by the look-alike.
+- Data learned by 1.0.x is deleted on update.
+- New `sudo facelock add-other` / `clear-others`: faces of people who must
+  not unlock; a face closer to them than to you is refused.
+- Old match settings in `/etc/facelock/facelock.conf` are replaced (a copy
+  is kept as `facelock.conf.1.0`); they let look-alikes in.
+
 ## 1.0.5
 
 - Fixed for fresh installs: on stock Ubuntu the login screen didn't read

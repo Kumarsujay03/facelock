@@ -24,6 +24,7 @@ class Result:
     best_vec: np.ndarray = None
     learn_vec: np.ndarray = None
     blinked: bool = False
+    other_seen: bool = False  # a face closer to a known other person was refused
     blink_frames: int = 0     # frames the blink check could measure
     blink_peak: float = 0.0   # its strongest eye-closure score (2.0 counts as shut)
     dark: bool = False
@@ -33,6 +34,29 @@ class Result:
     luma: float = None
 
 
+def frame_score(vec, gallery, cfg):
+    """(score, enrolled score, refused as an 'other') for one face.
+
+    The score is the similarity to the enrolment; learned samples (other
+    light, angles) only raise it for a face already close to the enrolment,
+    so they can't carry a look-alike over the bar. A face at least as close
+    to a known other person (facelock add-other) is refused."""
+    enrolled_score = similarity(vec, gallery.enrolled)
+    score = enrolled_score
+    if enrolled_score >= cfg.learned_floor and len(gallery.learned):
+        score = max(score, similarity(vec, gallery.learned))
+    if len(gallery.others) and similarity(vec, gallery.others) >= score - cfg.other_margin:
+        return min(score, 0.0), enrolled_score, True
+    return score, enrolled_score, False
+
+
+def accepted(hits, score, enrolled_score, cfg):
+    """Enough evidence to unlock: accept_frames frames at or above accept,
+    or one frame at or above accept_instant that is also close to the
+    enrolment itself."""
+    return hits >= cfg.accept_frames or (score >= cfg.accept_instant and enrolled_score >= cfg.accept)
+
+
 def run(engine, cfg, gallery, emit=lambda s: None, alive=lambda: True,
         failures_left=None, verbose=None, trace=None):
     res = Result()
@@ -40,8 +64,6 @@ def run(engine, cfg, gallery, emit=lambda s: None, alive=lambda: True,
     need_blink = cfg.liveness == "blink"
     watch_blink = cfg.liveness in ("blink", "observe")  # observe: recorded, never waited for
     blink = BlinkDetector(*gallery.blink) if gallery.blink else BlinkDetector()
-    vectors = gallery.all
-    enrolled = gallery.enrolled
     deadline = cfg.scan_seconds
     attempt_start = None      # time the current attempt saw its first face
     last_face = None
@@ -79,7 +101,7 @@ def run(engine, cfg, gallery, emit=lambda s: None, alive=lambda: True,
             if (cfg.lowlight and not res.dark and len(live) >= 10
                     and t - live_from >= cfg.light_after
                     and float(np.median(live[-5:])) < cfg.dark_luma
-                    and res.best < cfg.threshold):
+                    and res.best < cfg.accept):
                 res.dark = True
                 emit("dark")
                 deadline += 2.5
@@ -96,12 +118,13 @@ def run(engine, cfg, gallery, emit=lambda s: None, alive=lambda: True,
             if attempt_start is None:
                 attempt_start, hits = t, 0
             vec = engine.embed(frame, face)
-            score = similarity(vec, vectors)
+            score, enrolled_score, other = frame_score(vec, gallery, cfg)
+            res.other_seen = res.other_seen or other
             res.scores.append(round(score, 3))
             if score > res.best:
                 res.best, res.best_vec = score, vec
-            if score >= cfg.learn_threshold and similarity(vec, enrolled) >= cfg.threshold:
-                # most novel confident frame: teaches the gallery the most
+            if enrolled_score >= cfg.learn_from and score > 0:
+                # most novel strong frame: teaches the gallery the most
                 if res.learn_vec is None or similarity(vec, gallery.learned) < similarity(res.learn_vec, gallery.learned):
                     res.learn_vec = vec
             if watch_blink:
@@ -113,9 +136,9 @@ def run(engine, cfg, gallery, emit=lambda s: None, alive=lambda: True,
                                   face=round(face.size), box=[round(float(v)) for v in face.box],
                                   lm=face.landmarks.round().tolist(), blinked=res.blinked, **blink.last))
 
-            if score >= cfg.threshold:
+            if score >= cfg.accept:
                 hits += 1
-            matched = hits >= cfg.frames_needed or score >= cfg.instant_threshold
+            matched = accepted(hits, score, enrolled_score, cfg)
             if matched and matched_at is None:
                 matched_at = t
             if matched_at is not None:

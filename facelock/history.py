@@ -92,6 +92,8 @@ def describe(e):
         parts.append(f"blink check {e['blink_frames']} frames, peak {e.get('blink_peak', 0):.1f}")
     if e.get("learned"):
         parts.append("learned")
+    if e.get("other"):
+        parts.append("REFUSED a face closer to an 'other' person")
     if e.get("brightness") is not None:
         parts.append(f"brightness {e['brightness']:.0f}")
     return "  ".join(parts)

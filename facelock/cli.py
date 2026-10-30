@@ -4,6 +4,8 @@
   sudo facelock calibrate [user]  redo the blink check calibration
   sudo facelock test [user]     run one unlock scan and show the scores
   sudo facelock remove [user]   delete your face data
+  sudo facelock add-other [user]   capture someone who must NOT unlock (a look-alike relative)
+  sudo facelock clear-others [user]  forget those faces
   facelock status               cameras, enrolled users and the service
   sudo facelock stats           unlocks, failures and timings, by day (last 14 days)
   sudo facelock report          a plain-text report to send to the developer
@@ -79,7 +81,8 @@ def cmd_test(a):
     if not gallery.enrolled_any:
         sys.exit(f"No face enrolled for {a.user}. Run: sudo facelock enroll")
     print(f"{len(gallery.enrolled)} enrolled + {len(gallery.learned)} learned samples; "
-          f"threshold {cfg.threshold}, liveness {cfg.liveness}. Look at the camera"
+          f"accept {cfg.accept} on {cfg.accept_frames} frames or {cfg.accept_instant} on one, "
+          f"{len(gallery.others)} 'other' samples, liveness {cfg.liveness}. Look at the camera"
           + (" and blink." if cfg.liveness == "blink" else "."))
 
     def verbose(t, score, face, lum, blinked):
@@ -103,6 +106,38 @@ def cmd_test(a):
     if res.scores:
         print("Scores:", " ".join(f"{s:.2f}" for s in res.scores[:40]))
     sys.exit(0 if res.ok else 1)
+
+
+def cmd_add_other(a):
+    """Capture a person who must never unlock as this user (a sibling, a
+    look-alike). Any face closer to them than to you is refused."""
+    need_root()
+    from .engine import Engine
+    from .enroll import capture
+    g = store.Gallery(a.user)
+    if not g.enrolled_any:
+        sys.exit(f"Enrol {a.user} first: sudo facelock enroll")
+    print(f"Capturing someone who must NOT unlock as {a.user}.")
+    print(f"Ask them to sit in front of the camera ({a.user} should stay out of view).")
+    try:
+        vectors, meta = capture(Engine(), config.load())
+    except RuntimeError as e:
+        sys.exit(f"Capture failed: {e}")
+    from .engine import similarity
+    closest = max(similarity(v, g.enrolled) for v in vectors)
+    if closest >= 0.80:
+        sys.exit(f"That looks like {a.user} (similarity {closest:.2f}), so it wasn't saved. "
+                 f"Make sure only the other person is in view.")
+    g.add_others(vectors)
+    print(f"Saved {len(vectors)} samples. Their closest match to {a.user} was {closest:.2f}; "
+          f"faces closer to them than to {a.user} are now refused.")
+    print(f"Have them try: lock the screen and look at the camera. ({len(g.others)} 'other' samples in total)")
+
+
+def cmd_clear_others(a):
+    need_root()
+    store.Gallery(a.user).clear_others()
+    print("Forgotten.")
 
 
 def cmd_remove(a):
@@ -155,8 +190,12 @@ def print_summary(events):
         print(f"  match score on unlocks: median {med(scores):.2f}, lowest {min(scores):.2f}")
         print(f"  dark (screen lit up): {sum(bool(e.get('dark')) for e in ok)}, "
               f"blink seen: {sum(bool(e.get('blink')) for e in ok)}, learned from: {sum(bool(e.get('learned')) for e in ok)}")
-    print(f"  near misses learned after a fingerprint/password unlock: "
-          f"{sum(e['kind'] == 'relearn' for e in events)}")
+    refused = sum(bool(e.get("other")) for e in scans)
+    if refused:
+        print(f"  refused because the face was closer to an 'other' person: {refused}")
+    old = sum(e['kind'] == 'relearn' for e in events)
+    if old:
+        print(f"  near misses learned by facelock 1.0.x (that data has been discarded): {old}")
     errors = [e for e in events if e["kind"] == "error" or e.get("camera_error")]
     print(f"  errors: {len(errors)}")
 
@@ -303,13 +342,14 @@ def cmd_status(a):
                                        if update.available() else ""))
     print("Cameras:", ", ".join(f"{p} ({c})" for p, c in camera.candidates()) or "none found")
     cfg = config.load()
-    print(f"Config: {config.CONFIG_PATH} (threshold {cfg.threshold}, liveness {cfg.liveness}, "
+    print(f"Config: {config.CONFIG_PATH} (accept {cfg.accept} x{cfg.accept_frames}, "
+          f"liveness {cfg.liveness}, "
           f"max failures {cfg.max_failures}, auto-update {'on' if cfg.auto_update else 'off'})")
     if os.access(config.STATE_DIR, os.R_OK):
         for user in store.users():
             g = store.Gallery(user)
             print(f"Enrolled: {user} ({len(g.enrolled)} samples, {len(g.learned)} learned, "
-                  f"blink calibration {g.blink or 'default'})")
+                  f"{len(g.others)} 'other' samples, blink calibration {g.blink or 'default'})")
     else:
         print("Enrolled users: (run with sudo to see)")
     state = subprocess.run(["systemctl", "is-active", "facelockd"], capture_output=True, text=True).stdout.strip()
@@ -320,7 +360,7 @@ def main():
     ap = argparse.ArgumentParser(prog="facelock", description="Face unlock for the login and lock screens.")
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name, fn in (("enroll", cmd_enroll), ("calibrate", cmd_calibrate), ("test", cmd_test),
-                     ("remove", cmd_remove)):
+                     ("remove", cmd_remove), ("add-other", cmd_add_other), ("clear-others", cmd_clear_others)):
         p = sub.add_parser(name)
         p.add_argument("user", nargs="?", default=default_user())
         p.set_defaults(fn=fn)

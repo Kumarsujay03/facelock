@@ -16,16 +16,16 @@ MODEL_DIR = os.environ.get(
 class Config:
     # [camera]
     device: str = "auto"          # "auto" or a path such as /dev/video0
-    # [match]
-    threshold: float = 0.45       # SFace cosine similarity needed on a frame
-    frames_needed: int = 2        # frames at or above threshold in one attempt
-    instant_threshold: float = 0.62  # one frame this good is enough
-    learn_threshold: float = 0.58    # only learn from unlocks this certain
+    # [match]  (SFace cosine similarity, 0-1)
+    # A look-alike relative scored up to 0.54 against an enrolled face in real
+    # use; its owner usually 0.60-0.88. The bars below keep a margin.
+    accept: float = 0.58          # a frame this similar to you counts...
+    accept_frames: int = 3        # ...and this many such frames unlock
+    accept_instant: float = 0.66  # or one frame this similar to your enrolled face
+    learned_floor: float = 0.50   # learned samples only count for a frame this close to the enrolment
+    learn_from: float = 0.68      # only frames this close to the enrolment are learned
     max_learned: int = 40
-    # a scan that saw a likely-you face but didn't unlock is learned too, if
-    # you then unlock with fingerprint or password within relearn_seconds
-    relearn_min: float = 0.38
-    relearn_seconds: float = 60.0
+    other_margin: float = 0.03    # a face this close to an "other" (facelock add-other) is refused
     # [unlock]
     scan_seconds: float = 8.0     # longest a scan keeps the camera on
     attempt_seconds: float = 1.5  # a face that doesn't match for this long = one failed attempt
@@ -42,8 +42,10 @@ class Config:
 
     SECTIONS = {
         "camera": ["device"],
-        "match": ["threshold", "frames_needed", "instant_threshold", "learn_threshold", "max_learned",
-                  "relearn_min", "relearn_seconds"],
+        # older keys (threshold, frames_needed, instant_threshold,
+        # learn_threshold, relearn_*) are ignored: they allowed too weak a match
+        "match": ["accept", "accept_frames", "accept_instant", "learned_floor", "learn_from",
+                  "max_learned", "other_margin"],
         "unlock": ["scan_seconds", "attempt_seconds", "max_failures", "min_face_px"],
         "liveness": ["liveness"],
         "lowlight": ["dark_luma", "lowlight", "light_after"],
