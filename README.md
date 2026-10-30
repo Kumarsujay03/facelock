@@ -39,7 +39,7 @@ and password keep working at the same time; whichever succeeds first wins.
 Download the latest release, or clone the repository, then:
 
 ```sh
-tar xf facelock-1.2.4.tar.gz && cd facelock-1.2.4     # or: git clone https://github.com/Kumarsujay03/facelock && cd facelock
+tar xf facelock-1.2.5.tar.gz && cd facelock-1.2.5     # or: git clone https://github.com/Kumarsujay03/facelock && cd facelock
 sudo ./install.sh
 ```
 
@@ -113,9 +113,11 @@ there) and apply from the next scan.
 - **Teach it on purpose:** `sudo facelock improve` captures your face again
   and adds it to your enrolment, keeping everything learned and your bar.
   Run it in conditions where face unlock struggles (dim light, glasses,
-  another room). Only the enrolled person can be added: the new frames must
-  match your existing enrolment at your current bar or it refuses. Up to 48
-  enrolled samples are kept, the most varied ones.
+  another room). Only the enrolled person can be added: frames matching
+  your enrolment at your bar are added; between 0.50 and your bar (normal
+  with glasses or in dim light) it shows the score and asks first; below
+  0.50 it refuses (strangers stay below 0.35). Up to 48 enrolled samples are
+  kept, the most varied ones.
 - Learned samples only help a face that is already close to your enrolment,
   and your enrolment samples never change.
 - facelock 1.0.x also learned from "near misses" and from weaker unlocks.

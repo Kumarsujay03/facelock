@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.5
+
+- Fixed: enrolling or `facelock improve` could fail with "the frames don't
+  agree with each other" for one person, especially with glasses. The check
+  compared samples with an unnormalised average, and a single odd frame
+  (glare, a blink mid-turn) failed the whole capture. Odd frames are now
+  dropped; it fails only if fewer than 8 frames agree on one face.
+- `facelock improve` asks before adding frames that match the enrolment
+  below the user's bar but at 0.50 or more (glasses, dim light: what it is
+  for), and refuses below 0.50 (strangers stay below 0.35).
+
 ## 1.2.4
 
 - New `sudo facelock improve`: add more of your face to the enrolment (dim

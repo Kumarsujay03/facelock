@@ -80,8 +80,17 @@ def capture(engine, cfg, say=print):
     chosen = [int(ok[i]) for i in pick_diverse(vectors[ok], KEEP)]
     say("Analysing the face (this takes a few seconds)...")
     keep_strong = np.array([engine.embed_strong(None, None, crops[i]) for i in chosen])
-    if float((keep_strong @ keep_strong.mean(axis=0)).min()) < 0.3:
-        raise RuntimeError("the frames don't agree with each other (more than one person in view?)")
+    # odd frames (glare on glasses, a blink mid-turn, half out of view) are
+    # dropped rather than failing the capture; most must agree on one person
+    centre_s = keep_strong.mean(axis=0)
+    centre_s /= np.linalg.norm(centre_s)
+    agree_s = keep_strong @ centre_s
+    good = agree_s >= 0.40
+    if good.sum() < 8:
+        raise RuntimeError(f"only {int(good.sum())} of {len(chosen)} frames agree on one face "
+                           "(more than one person in view, or the face often out of view?)")
+    chosen = [c for c, g in zip(chosen, good) if g]
+    keep_strong = keep_strong[good]
     # how closely this face matches itself: frames not kept, against the kept
     rest = [i for i in range(len(crops)) if i not in set(chosen)]
     rest = rest[::max(1, len(rest) // 40)][:40]

@@ -67,6 +67,9 @@ def do_calibrate(user, engine, cfg):
               f"open eyes {info['open_floor']}, blinks {info['blink_dips']}).")
 
 
+IMPROVE_MIN = 0.50  # AuraFace; strangers stay below 0.35
+
+
 def cmd_improve(a):
     """Add more of your face to the enrolment (other light, glasses, angles)
     without starting over: learned samples and the adaptive bar are kept."""
@@ -89,10 +92,17 @@ def cmd_improve(a):
     match = float(np.median([top_similarity(v, g.enrolled_strong) for v in strong]))
     from . import scan
     bar = scan.strong_bar(g, cfg)
+    if match < IMPROVE_MIN:
+        sys.exit(f"Not added: these frames match {a.user}'s enrolment at only {match:.2f} "
+                 f"(strangers stay below 0.35). Only the enrolled person can be added. If the light "
+                 f"was very different, try somewhere in between first, or enrol again.")
     if match < bar:
-        sys.exit(f"Not added: these frames match {a.user}'s enrolment at {match:.2f}, below the bar "
-                 f"({bar}). Only the enrolled person can be added; in very different light, "
-                 f"try somewhere in between first, or enrol again.")
+        # glasses or dim light lower the score: exactly what this is for,
+        # so ask rather than refuse
+        print(f"These frames match your enrolment at {match:.2f} (your bar is {bar}), as expected "
+              f"for glasses or dim light. Only add them if it was you alone in front of the camera.")
+        if not sys.stdin.isatty() or input("Add them? [y/N] ").strip().lower() not in ("y", "yes"):
+            sys.exit("Not added.")
     count = store.add_enrolment(a.user, vectors, strong)
     print(f"Added. {count} enrolled samples now (they matched your enrolment at {match:.2f}); "
           f"learned samples and your bar ({bar}) are kept.")
