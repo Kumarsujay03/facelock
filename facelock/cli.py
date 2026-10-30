@@ -475,7 +475,8 @@ def cmd_status(a):
                                        if update.available() else ""))
     print("Cameras:", ", ".join(f"{p} ({c})" for p, c in camera.candidates()) or "none found")
     cfg = config.load()
-    print(f"Config: {config.CONFIG_PATH} (accept {cfg.accept} x{cfg.accept_frames}, "
+    print(f"Config: {config.CONFIG_PATH} (AuraFace floor {max(cfg.strong_accept, 0.62)} over "
+          f"{cfg.strong_frames} frames, SFace {cfg.accept}, "
           f"liveness {cfg.liveness}, "
           f"max failures {cfg.max_failures}, auto-update {'on' if cfg.auto_update else 'off'})")
     if os.access(config.STATE_DIR, os.R_OK):

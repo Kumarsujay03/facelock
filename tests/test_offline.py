@@ -507,6 +507,33 @@ class InvariantTests(unittest.TestCase):
             self.assertLess(s, bar)
 
 
+class CommandTests(unittest.TestCase):
+    """Commands that need no camera run without crashing (1.3.0's
+    `facelock status` used a setting removed in 1.2.0)."""
+
+    def test_status_and_stats_run(self):
+        import contextlib
+        import io
+        import types
+        from facelock import cli
+        store.save_enrolment("noa", unit(16, 70), {"strong_self_p10": 0.8}, strong=unit_dim(16, 70, 512))
+        for fn, args in ((cli.cmd_status, {}), (cli.cmd_stats, {"days": 14, "last": 5})):
+            with contextlib.redirect_stdout(io.StringIO()):
+                try:
+                    fn(types.SimpleNamespace(**args))
+                except SystemExit:
+                    pass
+
+    def test_every_config_field_used_exists(self):
+        import re
+        fields = set(config.Config.__dataclass_fields__)
+        for name in os.listdir(os.path.join(ROOT, "facelock")):
+            if name.endswith(".py"):
+                src = open(os.path.join(ROOT, "facelock", name)).read()
+                for attr in set(re.findall(r"\bcfg\.([a-z_]+)", src)):
+                    self.assertIn(attr, fields, f"{name} uses cfg.{attr}, which isn't a setting")
+
+
 class BlinkTests(unittest.TestCase):
     def run_seq(self, seq, drop=0.8, shift=None):
         b = liveness.BlinkDetector(drop)

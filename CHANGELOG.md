@@ -5,6 +5,9 @@
 - New `sudo facelock keyring`: checks that a face login also unlocks the
   keyring (module, PAM files, sealed password, that it unseals), without
   showing the password.
+- Fixed: `facelock status` crashed (it used a setting removed in 1.2.0).
+- Tests now check that every setting the code uses exists, and CI runs
+  `status`, `stats`, `keyring` and `update --check` after installing.
 
 ## 1.3.0
 

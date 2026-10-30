@@ -41,8 +41,16 @@ ok "all three face models and the two-model settings"
 grep -q facelock@kumarsujay03.github.io /etc/dconf/db/gdm.d/03-facelock || fail "extension not enabled for the login screen"
 grep -qx 'system-db:gdm' /etc/dconf/profile/gdm || fail "the login screen's dconf profile doesn't read gdm.d"
 ok "extension installed for the login screen"
-facelock status | grep -q "^facelock $(cat /opt/facelock/VERSION)" || fail "facelock status"
-ok "facelock status"
+# every command that needs no camera must run cleanly (a crash after the
+# first line of output once slipped through a grep on that line)
+out=$(facelock status 2>&1) || { echo "$out"; fail "facelock status crashed"; }
+echo "$out" | grep -q "^facelock $(cat /opt/facelock/VERSION)" || fail "facelock status"
+for cmd in "stats" "keyring" "update --check" "--help"; do
+    out=$(facelock $cmd 2>&1); rc=$?
+    echo "$out" | grep -q "Traceback" && { echo "$out"; fail "facelock $cmd crashed"; }
+    [ $rc -le 1 ] || fail "facelock $cmd exited with $rc"
+done
+ok "facelock status, stats, keyring, update --check run cleanly"
 report=/tmp/facelock-report.txt
 facelock report -o "$report" >/dev/null && grep -q "No camera images" "$report" || fail "facelock report"
 ok "facelock report"
