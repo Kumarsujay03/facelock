@@ -1,0 +1,8 @@
+[Unit]
+Description=Check for a new facelock release (and install it if auto-update is on)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/facelock/bin/facelock update --timer

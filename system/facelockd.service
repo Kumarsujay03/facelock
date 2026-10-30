@@ -1,0 +1,35 @@
+[Unit]
+Description=Face unlock service (camera and face data for the GDM face login)
+Documentation=file:///opt/facelock/README.md
+# ready before the login screen asks for it
+Before=display-manager.service
+
+[Service]
+Type=simple
+ExecStart=/opt/facelock/bin/facelockd
+Environment=PYTHONDONTWRITEBYTECODE=1
+Restart=on-failure
+RestartSec=2
+RuntimeDirectory=facelock
+RuntimeDirectoryMode=0755
+StateDirectory=facelock
+StateDirectoryMode=0700
+UMask=0077
+# only the camera, its own state and the logind/D-Bus socket
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+DevicePolicy=closed
+DeviceAllow=char-video4linux rw
+CapabilityBoundingSet=
+LockPersonality=yes
+RestrictRealtime=yes
+
+[Install]
+WantedBy=graphical.target

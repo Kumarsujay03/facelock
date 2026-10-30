@@ -1,0 +1,29 @@
+#!/bin/sh
+# Called by pam_exec (seteuid, expose_authtok) after a correct password, from
+# the system's password check. Hands the password to
+# facelock-keyring-seal@<user>.service, which seals it (TPM if there is one)
+# so pam_facelock_keyring can unlock the keyring after a face login.
+#
+# Needs root: the login and lock screens run it as root; sudo implementations
+# that check passwords without root rights skip it. Only users listed in
+# /etc/facelock/keyring-users take part.
+
+[ "$PAM_TYPE" = auth ] || exit 0
+[ "$(id -u)" = 0 ] || exit 0
+user=$PAM_USER
+case $user in ''|-*|.*|*[!A-Za-z0-9._-]*) exit 0 ;; esac
+grep -qxF -- "$user" /etc/facelock/keyring-users 2>/dev/null || exit 0
+
+# the password arrives NUL-terminated on stdin
+password=$(head -c 4097 | tr -d '\000')
+[ -n "$password" ] || exit 0
+[ ${#password} -le 4096 ] || exit 0
+
+# sealing takes a few seconds; the service does it so the unlock isn't
+# delayed and the login screen can't cut it short. /run is in memory and
+# the service deletes the file as soon as it has read it.
+umask 077
+mkdir -p /run/facelock-keyring
+printf %s "$password" > "/run/facelock-keyring/$user.pw" &&
+    systemctl start --no-block "facelock-keyring-seal@$user.service"
+exit 0

@@ -1,0 +1,8 @@
+Name: Unlock the keyring after face login (facelock)
+Default: yes
+Priority: 0
+Auth-Type: Additional
+Auth:
+	optional	pam_exec.so quiet seteuid expose_authtok /opt/facelock/keyring/facelock-keyring-seal
+Auth-Final:
+	optional	pam_exec.so quiet seteuid expose_authtok /opt/facelock/keyring/facelock-keyring-seal

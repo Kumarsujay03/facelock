@@ -1,0 +1,5 @@
+#!/bin/sh
+# Wrapper: run the facelock CLI with its own Python environment.
+HERE=$(dirname "$(readlink -f "$0")")
+ROOT=${FACELOCK_HOME:-$(dirname "$HERE")}
+exec "$ROOT/.venv/bin/python" -I -c 'import sys; sys.path.insert(0, sys.argv.pop(1)); from facelock.cli import main; main()' "$ROOT" "$@"

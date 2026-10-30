@@ -1,0 +1,39 @@
+#!/bin/sh
+# facelock-keyring-seal@<user>.service: seal the password left in
+# /run/facelock-keyring/<user>.pw. With a TPM it is bound to this machine's
+# TPM and Secure Boot state; without one, to this machine's systemd host key.
+log() { logger -t facelock-keyring -- "$*"; }
+
+user=$1
+case $user in ''|-*|.*|*[!A-Za-z0-9._-]*) log "invalid user name"; exit 1 ;; esac
+pwfile=/run/facelock-keyring/$user.pw
+cred=/var/lib/facelock-keyring/$user.cred
+name=facelock-keyring-$user
+[ -f "$pwfile" ] || { log "no password waiting for $user"; exit 0; }
+password=$(cat "$pwfile")
+rm -f "$pwfile"
+[ -n "$password" ] || { log "empty password for $user"; exit 0; }
+
+umask 077
+mkdir -p /var/lib/facelock-keyring
+if [ -f "$cred" ] &&
+   [ "$(systemd-creds decrypt --name="$name" "$cred" - 2>/dev/null)" = "$password" ]; then
+    log "keyring password for $user is already sealed and current"
+    exit 0
+fi
+if systemd-creds has-tpm2 --quiet 2>/dev/null; then
+    set -- --with-key=tpm2 --tpm2-pcrs=7
+    how="the TPM"
+else
+    set -- --with-key=host
+    how="the host key (no TPM found)"
+fi
+if err=$(printf %s "$password" |
+        systemd-creds encrypt "$@" --name="$name" - "$cred.new" 2>&1); then
+    mv -f "$cred.new" "$cred"
+    log "sealed the keyring password for $user with $how"
+else
+    rm -f "$cred.new"
+    log "could not seal the keyring password for $user: $err"
+    exit 1
+fi

@@ -1,0 +1,7 @@
+[Unit]
+Description=Seal the keyring password for %i (face login keyring unlock)
+
+[Service]
+Type=oneshot
+ExecStart=/opt/facelock/keyring/facelock-keyring-seal-job %i
+PrivateNetwork=yes

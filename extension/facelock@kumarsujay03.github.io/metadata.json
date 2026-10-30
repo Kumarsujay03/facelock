@@ -1,0 +1,19 @@
+{
+  "uuid": "facelock@kumarsujay03.github.io",
+  "name": "Face Unlock",
+  "description": "Face unlock on the lock and login screens, next to fingerprint and password. Scans when you wake the screen, lights your face up in the dark, and steps aside after 3 failed tries.",
+  "shell-version": [
+    "46",
+    "47",
+    "48",
+    "49",
+    "50"
+  ],
+  "session-modes": [
+    "user",
+    "unlock-dialog",
+    "gdm"
+  ],
+  "version": 2,
+  "url": "https://github.com/Kumarsujay03/facelock"
+}
