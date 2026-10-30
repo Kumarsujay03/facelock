@@ -218,6 +218,38 @@ class RealScoresTests(unittest.TestCase):
             self.assertFalse(self.scan.decide(window, self.cfg, self.scan.strong_bar(g, self.cfg)))
 
 
+class AdaptiveBarTests(unittest.TestCase):
+    def setUp(self):
+        from facelock import scan
+        self.scan = scan
+        self.cfg = config.Config()
+
+    def gallery(self, medians, p10=0.758):
+        return type("G", (), {"meta": {"strong_self_p10": p10, "unlock_medians": medians}})()
+
+    def test_waits_for_enough_unlocks(self):
+        self.assertIsNone(self.scan.adaptive_bar([0.8] * 9))
+        self.assertEqual(self.scan.strong_bar(self.gallery([0.8] * 9), self.cfg), 0.638)
+
+    def test_rises_with_the_owners_scores(self):
+        low = self.scan.strong_bar(self.gallery([0.78] * 12), self.cfg)
+        high = self.scan.strong_bar(self.gallery([0.85] * 12), self.cfg)
+        self.assertGreater(high, low)
+        self.assertGreater(high, 0.638)
+
+    def test_never_below_enrolment_or_floor_and_capped(self):
+        self.assertEqual(self.scan.strong_bar(self.gallery([0.60] * 20), self.cfg), 0.638)
+        self.assertLessEqual(self.scan.strong_bar(self.gallery([0.99] * 20), self.cfg), self.scan.ADAPT_CAP)
+
+    def test_record_and_reset_on_enrolment(self):
+        store.save_enrolment("finn", unit(5, 30), {}, strong=unit_dim(5, 30, 512))
+        for m in [0.8] * 35:
+            store.record_unlock("finn", m)
+        self.assertEqual(len(store.load_meta("finn")["unlock_medians"]), 30)
+        store.save_enrolment("finn", unit(5, 31), {}, strong=unit_dim(5, 31, 512))
+        self.assertEqual(store.load_meta("finn")["unlock_medians"], [])
+
+
 class BlinkTests(unittest.TestCase):
     def run_seq(self, seq, drop=0.8, shift=None):
         b = liveness.BlinkDetector(drop)

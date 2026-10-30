@@ -91,13 +91,35 @@ def personal_bar(self_p10):
     return round(min(max(self_p10 - 0.12, STRONG_FLOOR), 0.72), 3)
 
 
+# the bar adapts to the user's own recent unlocks once there are this many
+ADAPT_AFTER = 10
+ADAPT_KEEP = 30       # unlock medians remembered
+ADAPT_MARGIN = 0.10   # below the user's typical worst unlock
+ADAPT_CAP = 0.72
+
+
+def adaptive_bar(medians):
+    """From the AuraFace medians of the user's recent face unlocks: their
+    typical worst (10th percentile) minus a margin, capped. None until there
+    are ADAPT_AFTER of them. As learning makes the user's own scores higher,
+    this rises with them."""
+    if len(medians) < ADAPT_AFTER:
+        return None
+    return round(min(float(np.percentile(medians[-ADAPT_KEEP:], 10)) - ADAPT_MARGIN, ADAPT_CAP), 3)
+
+
 def strong_bar(gallery, cfg):
-    """The user's AuraFace bar: from how consistently their face matched
-    itself at enrolment, never below STRONG_FLOOR or the configured value."""
+    """The user's AuraFace bar, the highest of: STRONG_FLOOR, the configured
+    value, the bar from how consistently their face matched itself at
+    enrolment, and the bar learned from their recent unlocks. It never goes
+    below the enrolment bar; re-enrolling resets the learned part."""
     bar = max(STRONG_FLOOR, cfg.strong_accept)
     p10 = gallery.meta.get("strong_self_p10")
     if p10:
         bar = max(bar, personal_bar(float(p10)))
+    adapted = adaptive_bar(gallery.meta.get("unlock_medians", []))
+    if adapted:
+        bar = max(bar, adapted)
     return bar
 
 

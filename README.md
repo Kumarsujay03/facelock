@@ -39,7 +39,7 @@ and password keep working at the same time; whichever succeeds first wins.
 Download the latest release, or clone the repository, then:
 
 ```sh
-tar xf facelock-1.2.1.tar.gz && cd facelock-1.2.1     # or: git clone https://github.com/Kumarsujay03/facelock && cd facelock
+tar xf facelock-1.2.2.tar.gz && cd facelock-1.2.2     # or: git clone https://github.com/Kumarsujay03/facelock && cd facelock
 sudo ./install.sh
 ```
 
@@ -96,9 +96,17 @@ there) and apply from the next scan.
 ## How it learns
 
 - **Only from strong unlocks:** a frame is learned only if it is very close
-  to your *enrolled* face (0.68 or more; a look-alike brother reached 0.54).
-  It saves the frame that differs most from what it already knows (a new
-  angle, new light, glasses), keeps up to 40, and replaces the most redundant.
+  to your *enrolled* face with both models (AuraFace 0.75+, SFace 0.68+; a
+  look-alike brother reached 0.55 and 0.57). It saves the frame that differs
+  most from what it already knows (a new angle, new light, glasses), keeps up
+  to 40, and replaces the most redundant one.
+- **The bar rises with you.** Every face unlock records how well you
+  matched (one number). After 10 unlocks your AuraFace bar follows your own
+  typical worst unlock minus 0.10, capped at 0.72. As learning makes your
+  scores higher, your bar rises with them, which leaves less room for anyone
+  else. It never drops below your enrolment bar or 0.62. If your look
+  changes a lot and face unlock stops recognising you, enrol again (that
+  resets it). `facelock status` shows your bar and where it comes from.
 - Learned samples only help a face that is already close to your enrolment,
   and your enrolment samples never change.
 - facelock 1.0.x also learned from "near misses" and from weaker unlocks.

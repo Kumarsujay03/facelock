@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.2
+
+- The AuraFace bar now rises with the user: after 10 face unlocks it follows
+  the user's typical worst unlock (10th percentile of the last 30) minus
+  0.10, capped at 0.72, never below the enrolment bar or 0.62. As learning
+  raises the user's own scores, the bar rises with them. Enrolling again
+  resets it.
+- `facelock status` and `facelock stats` show each user's bar and where it
+  comes from.
+- Tested on a real non-relative (the owner's mother): SFace never passed
+  0.37, so AuraFace was never even needed.
+
 ## 1.2.1
 
 **Security: wider margin against look-alikes.**

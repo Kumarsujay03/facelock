@@ -164,6 +164,10 @@ def cmd_stats(a):
         sys.exit("No face unlock scans recorded yet. Use the lock screen for a while, then look again.")
     print(f"Face unlock, last {a.days} days ({len(scans)} scans)")
     print_summary(events)
+    cfg = config.load()
+    for user in store.users():
+        g = store.Gallery(user)
+        print(f"  {user}: AuraFace bar {bar_story(g, cfg)}, {len(g.learned)} learned samples")
     print("\nBy day:")
     days = {}
     for e in scans:
@@ -345,6 +349,19 @@ def cmd_import_log(a):
         print(f"   kept {n} earlier scans from the log in the history")
 
 
+def bar_story(g, cfg):
+    """The user's AuraFace bar and where it comes from."""
+    from . import scan
+    parts = [f"floor {scan.STRONG_FLOOR}"]
+    if g.meta.get("strong_self_p10"):
+        parts.append(f"enrolment {scan.personal_bar(float(g.meta['strong_self_p10']))}")
+    medians = g.meta.get("unlock_medians", [])
+    adapted = scan.adaptive_bar(medians)
+    parts.append(f"learned from your unlocks {adapted}" if adapted else
+                 f"learned from your unlocks after {scan.ADAPT_AFTER - len(medians)} more")
+    return f"{scan.strong_bar(g, cfg)} (" + ", ".join(parts) + ")"
+
+
 def cmd_status(a):
     from . import __version__, update
     print(f"facelock {__version__}" + (f" (update available: {update.available()}; run: sudo facelock update)"
@@ -359,6 +376,7 @@ def cmd_status(a):
             g = store.Gallery(user)
             print(f"Enrolled: {user} ({len(g.enrolled)} samples, {len(g.learned)} learned, "
                   f"{len(g.others)} 'other' samples, blink calibration {g.blink or 'default'})")
+            print(f"  AuraFace bar {bar_story(g, cfg)}")
     else:
         print("Enrolled users: (run with sudo to see)")
     state = subprocess.run(["systemctl", "is-active", "facelockd"], capture_output=True, text=True).stdout.strip()
