@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.5
+
+- Fixed for fresh installs: on stock Ubuntu the login screen didn't read
+  facelock's settings (its dconf profile lacks `system-db:gdm`), so face
+  unlock could be missing from the login screen. The installer now sets this up.
+- Fixed: installing failed when no GNOME extension had been installed
+  system-wide before, or when `/etc/dconf/profile` didn't exist.
+- `facelock report` can replace an older report written by someone else.
+- Every change is now checked by GitHub Actions, including a full install,
+  update and uninstall on a fresh Ubuntu with GDM, and releases are only
+  published once all checks pass.
+
 ## 1.0.4
 
 - The installer checks that HTTPS downloads work before changing anything,
