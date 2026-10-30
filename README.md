@@ -162,6 +162,26 @@ Attach it to a [GitHub issue](https://github.com/Kumarsujay03/facelock/issues).
 
 Live logs: `journalctl -u facelockd -f`.
 
+## Troubleshooting
+
+**`git clone` or the installer fails with "SSL certificate verification
+failed" / "certificate signer not trusted".** The laptop doesn't trust the
+certificate it receives for GitHub. The installer downloads the face models
+and Python packages over HTTPS too, so fix this first:
+
+1. Check the date and time (`date`); a wrong clock breaks every certificate.
+2. Update the trusted certificates:
+   `sudo apt update && sudo apt install --reinstall ca-certificates && sudo update-ca-certificates`
+   (Fedora: `sudo dnf reinstall ca-certificates`; Arch: `sudo pacman -S ca-certificates`).
+3. See who signed what you received:
+   `echo | openssl s_client -connect github.com:443 -servername github.com 2>/dev/null | grep 'i:'`
+   It should name Sectigo / USERTrust. A VPN, company proxy or antivirus name
+   instead (Cloudflare WARP, Zscaler, Kaspersky...) means it intercepts HTTPS:
+   turn it off while installing, or install its root certificate.
+
+**The camera isn't found or "Camera unavailable".** Close apps using the
+camera (browsers, video calls); `facelock status` lists the cameras it sees.
+
 ## Uninstall
 
 ```sh
