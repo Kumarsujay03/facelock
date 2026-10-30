@@ -264,6 +264,29 @@ class AdaptiveBarTests(unittest.TestCase):
         self.assertIsNone(store.load_meta("finn")["adapted_bar"])
 
 
+class ImproveTests(unittest.TestCase):
+    def test_adds_samples_and_keeps_learning(self):
+        store.save_enrolment("gus", unit(16, 40), {}, strong=unit_dim(16, 40, 512))
+        g = store.Gallery("gus")
+        g.learn(unit(1, 41)[0], unit_dim(1, 41, 512)[0], cap=40)
+        store.record_unlock("gus", 0.8, 0.638)
+        n = store.add_enrolment("gus", unit(16, 42), unit_dim(16, 42, 512))
+        g = store.Gallery("gus")
+        self.assertEqual(n, 32)
+        self.assertEqual(len(g.enrolled), len(g.enrolled_strong))
+        self.assertEqual(len(g.learned), 1)                        # learning kept
+        self.assertEqual(store.load_meta("gus")["unlock_count"], 1)  # bar history kept
+
+    def test_capped_and_keeps_new_samples(self):
+        store.save_enrolment("hal", unit(16, 50), {}, strong=unit_dim(16, 50, 512))
+        for i in range(4):
+            store.add_enrolment("hal", unit(16, 51 + i), unit_dim(16, 51 + i, 512))
+        g = store.Gallery("hal")
+        self.assertEqual(len(g.enrolled_strong), store.ENROLLED_CAP)
+        newest = unit_dim(16, 54, 512)
+        self.assertTrue(any(np.allclose(newest[0], row) for row in g.enrolled_strong))
+
+
 class BlinkTests(unittest.TestCase):
     def run_seq(self, seq, drop=0.8, shift=None):
         b = liveness.BlinkDetector(drop)

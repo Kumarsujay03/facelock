@@ -1,6 +1,7 @@
 """facelock: enrol, test and manage face unlock.
 
   sudo facelock enroll [user]   capture your face (replaces an old enrolment)
+  sudo facelock improve [user]  add more of your face (dim light, glasses) without starting over
   sudo facelock calibrate [user]  redo the blink check calibration
   sudo facelock test [user]     run one unlock scan and show the scores
   sudo facelock remove [user]   delete your face data
@@ -64,6 +65,37 @@ def do_calibrate(user, engine, cfg):
         store.update_meta(user, blink={"drop": drop, "rise": rise})
         print(f"Blink check calibrated (contrast below {drop} and {rise} lighter; "
               f"open eyes {info['open_floor']}, blinks {info['blink_dips']}).")
+
+
+def cmd_improve(a):
+    """Add more of your face to the enrolment (other light, glasses, angles)
+    without starting over: learned samples and the adaptive bar are kept."""
+    need_root()
+    from .engine import Engine, top_similarity
+    from .enroll import capture
+    import numpy as np
+    g = store.Gallery(a.user)
+    if not g.strong_enrolled:
+        sys.exit(f"Enrol first: sudo facelock enroll {a.user}")
+    cfg = config.load()
+    print(f"Adding to {a.user}'s face. Use the conditions face unlock struggles with: "
+          "dim light, glasses, a different place to sit.")
+    try:
+        vectors, strong, meta = capture(Engine(), cfg)
+    except RuntimeError as e:
+        sys.exit(f"Capture failed: {e}")
+    # only the enrolled person may be added: the new frames must clearly
+    # match the existing enrolment with the strong model
+    match = float(np.median([top_similarity(v, g.enrolled_strong) for v in strong]))
+    from . import scan
+    bar = scan.strong_bar(g, cfg)
+    if match < bar:
+        sys.exit(f"Not added: these frames match {a.user}'s enrolment at {match:.2f}, below the bar "
+                 f"({bar}). Only the enrolled person can be added; in very different light, "
+                 f"try somewhere in between first, or enrol again.")
+    count = store.add_enrolment(a.user, vectors, strong)
+    print(f"Added. {count} enrolled samples now (they matched your enrolment at {match:.2f}); "
+          f"learned samples and your bar ({bar}) are kept.")
 
 
 def cmd_calibrate(a):
@@ -390,7 +422,7 @@ def cmd_status(a):
 def main():
     ap = argparse.ArgumentParser(prog="facelock", description="Face unlock for the login and lock screens.")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name, fn in (("enroll", cmd_enroll), ("calibrate", cmd_calibrate), ("test", cmd_test),
+    for name, fn in (("enroll", cmd_enroll), ("improve", cmd_improve), ("calibrate", cmd_calibrate), ("test", cmd_test),
                      ("remove", cmd_remove), ("add-other", cmd_add_other), ("clear-others", cmd_clear_others)):
         p = sub.add_parser(name)
         p.add_argument("user", nargs="?", default=default_user())

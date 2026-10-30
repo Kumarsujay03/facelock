@@ -152,6 +152,29 @@ def save_enrolment(user, embeddings, meta, strong=None):
                 enrolled_at=time.strftime("%Y-%m-%d %H:%M:%S"))
 
 
+ENROLLED_CAP = 48
+
+
+def add_enrolment(user, vectors, strong):
+    """Add samples to an existing enrolment (facelock improve), keeping the
+    learned samples and the adaptive bar. When there are more than
+    ENROLLED_CAP, the most varied set is kept (farthest-point on AuraFace),
+    always including every new sample's closest coverage. Returns the count."""
+    g = Gallery(user)
+    weak = np.vstack([g.enrolled, np.asarray(vectors, np.float32)])
+    strong_all = np.vstack([g.enrolled_strong, np.asarray(strong, np.float32)])
+    if len(strong_all) > ENROLLED_CAP:
+        chosen = [len(g.enrolled_strong)]  # start from the first new sample
+        while len(chosen) < ENROLLED_CAP:
+            sims = (strong_all @ strong_all[chosen].T).max(axis=1)
+            sims[chosen] = 2
+            chosen.append(int(np.argmin(sims)))
+        weak, strong_all = weak[chosen], strong_all[chosen]
+    _save(os.path.join(g.dir, "enrolled.npy"), weak)
+    _save(os.path.join(g.dir, "enrolled_strong.npy"), strong_all)
+    return len(strong_all)
+
+
 def record_unlock(user, median, current_bar, keep=30):
     """Remember the AuraFace median of a face unlock and move the adaptive
     bar (scan.next_bar). Returns the new bar."""

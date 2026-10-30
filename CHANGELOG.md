@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.4
+
+- New `sudo facelock improve`: add more of your face to the enrolment (dim
+  light, glasses, another room) without starting over; learned samples and
+  the adaptive bar are kept. The new frames must match the existing
+  enrolment at the user's bar, so only the enrolled person can be added. Up
+  to 48 enrolled samples, the most varied kept.
+
 ## 1.2.3
 
 - The adaptive bar is gentler: it only collects scores for the first 20
