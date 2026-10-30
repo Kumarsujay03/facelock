@@ -10,6 +10,8 @@
 - Fixed: `facelock status` crashed (it used a setting removed in 1.2.0).
 - Tests now check that every setting the code uses exists, and CI runs
   `status`, `stats`, `keyring` and `update --check` after installing.
+- CI caches the face models between runs (the 260 MB download happens only
+  when they change).
 
 ## 1.3.0
 
