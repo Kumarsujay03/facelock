@@ -40,10 +40,16 @@ jobs:
         run: |
           .venv/bin/python -I -c 'import sys; sys.path.insert(0, "."); import facelock.cli, facelock.daemon, facelock.update, facelock.history'
           bin/facelock --help >/dev/null
+      - name: Face models (cached between runs; downloaded when they change)
+        uses: actions/cache@v4
+        with:
+          path: m
+          key: models-${{ hashFiles('models/SHA256SUMS', 'models/URLS') }}
       - name: Face models download and match their checksums
         run: |
           mkdir -p m && cp models/SHA256SUMS m/
           while read -r sum file; do
+            [ -s "m/$file" ] && continue
             url=$(grep -F "$file" models/URLS); curl -fsSL -o "m/$file" "${url#* }"
           done < models/SHA256SUMS
           cd m && sha256sum -c SHA256SUMS
@@ -69,10 +75,18 @@ jobs:
           sudo apt-get update -q
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends \
             gdm3 gnome-shell dconf-cli pamtester >/dev/null
+      - name: Face models (cached between runs)
+        uses: actions/cache@v4
+        with:
+          path: m
+          key: models-${{ hashFiles('models/SHA256SUMS', 'models/URLS') }}
       - name: Install from the release archive
         run: |
           git archive --format=tar.gz --prefix=facelock/ -o /tmp/facelock.tar.gz HEAD
           mkdir /tmp/rel && tar -xzf /tmp/facelock.tar.gz -C /tmp/rel
+          # cached models are used if present (install.sh still checks their
+          # checksums); a cache miss makes install.sh download them as usual
+          cp m/*.onnx /tmp/rel/facelock/models/ 2>/dev/null || true
           sudo /tmp/rel/facelock/install.sh --no-keyring
       - name: Check the installation
         run: sudo sh tests/check-install.sh
