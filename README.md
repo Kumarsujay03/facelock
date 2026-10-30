@@ -39,7 +39,7 @@ and password keep working at the same time; whichever succeeds first wins.
 Download the latest release, or clone the repository, then:
 
 ```sh
-tar xf facelock-1.2.7.tar.gz && cd facelock-1.2.7     # or: git clone https://github.com/Kumarsujay03/facelock && cd facelock
+tar xf facelock-1.3.0.tar.gz && cd facelock-1.3.0     # or: git clone https://github.com/Kumarsujay03/facelock && cd facelock
 sudo ./install.sh
 ```
 
@@ -101,17 +101,21 @@ there) and apply from the next scan.
   look-alike brother reached 0.55 and 0.57). It saves the frame that differs
   most from what it already knows (a new angle, new light, glasses), keeps up
   to 40, and replaces the most redundant one.
-- **The bar rises with you, slowly.** Every face unlock records how well
-  you matched (one number). For the first 20 unlocks it only collects. After
-  that, while your recent median is 0.70 or more, each unlock raises your
-  AuraFace bar by at most 0.005, towards your recent median minus 0.12 (and
-  below your typical worst unlock), up to 0.72. As learning makes your scores
-  higher, the bar follows, which leaves less room for anyone else. It never
-  goes down. If your look changes a lot and face unlock stops recognising
-  you, enrol again (that resets it). `facelock status` shows your bar and
-  where it comes from.
+- **A bar per condition.** Your enrolment and every `facelock improve`
+  are separate sample groups, each with its own bar measured from that
+  capture: how closely those frames matched each other, minus 0.08, never
+  below 0.62. Your face is judged against the group it matches best, so good
+  light has a strict bar and dim light its own (lower) one, instead of one
+  bar from your best conditions refusing you in the others.
+- **Each bar rises with you, slowly.** Every face unlock records how well
+  you matched the group it used. After 20 unlocks of a group, while your
+  recent median there is 0.70 or more, each unlock raises that group's bar
+  by at most 0.005 towards your recent median minus 0.12 (and below your
+  typical worst unlock), up to 0.75. Good-light unlocks never tighten the
+  dim-light bar. Bars never go down; enrolling again resets them.
+  `facelock status` shows every group's bar.
 - **Teach it on purpose:** `sudo facelock improve` captures your face again
-  and adds it to your enrolment, keeping everything learned and your bar.
+  and adds it as a new group with its own bar, keeping everything learned.
   Run it in conditions where face unlock struggles (dim light, glasses,
   another room). Only the enrolled person can be added: frames matching
   your enrolment at your bar are added; between 0.50 and your bar (normal

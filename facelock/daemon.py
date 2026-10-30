@@ -221,16 +221,16 @@ class Daemon:
         learned = False
         if res.ok:
             self.lockouts.clear(user)
-            if res.median_strong is not None:
+            if res.median_strong is not None and res.group is not None:
                 with GALLERY_LOCK:
-                    store.record_unlock(user, res.median_strong, scan.strong_bar(gallery, cfg))
+                    store.record_unlock(user, res.median_strong, res.group, res.group_bar)
             if res.learn_strong is not None and (cfg.liveness != "blink" or res.blinked):
                 with GALLERY_LOCK:
                     gallery.learn(res.learn_vec, res.learn_strong, cfg.max_learned)
                 learned = True
-        log.info("auth %s: %s best=%.3f strong_median=%s strong_best=%.3f failures=%d/%d first_face=%s "
+        log.info("auth %s: %s best=%.3f strong_median=%s group=%s bar=%s strong_best=%.3f failures=%d/%d first_face=%s "
                  "elapsed=%ss luma=%s dark=%s blink=%s learned=%s other=%s scores=%s strong=%s",
-                 user, res.reason, res.best, res.median_strong, res.best_strong,
+                 user, res.reason, res.best, res.median_strong, res.group, res.group_bar, res.best_strong,
                  total if not res.ok else 0, cfg.max_failures,
                  res.first_face_s and round(res.first_face_s, 2), res.elapsed, res.luma, res.dark,
                  res.blinked, learned, res.other_seen, res.scores[:12], res.strong_scores[:12])

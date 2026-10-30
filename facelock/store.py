@@ -3,6 +3,9 @@
 Each face sample is kept twice, once per model, row for row:
 
 enrolled.npy / enrolled_strong.npy   from enrolment, never changed by learning
+enrolled_group.npy                   which capture (group) each enrolled row came from:
+                                     0 = enrol, 1, 2... = each `facelock improve`;
+                                     meta.json "groups" holds each group's bar data
 learned2.npy / learned_strong.npy    added after strong unlocks, capped
 others.npy / others_strong.npy       people who must NOT unlock (add-other)
 
@@ -73,6 +76,11 @@ class Gallery:
                 pass
         self.enrolled = self._load("enrolled.npy")
         self.enrolled_strong = self._load("enrolled_strong.npy", STRONG_DIM)
+        try:
+            self.enrolled_group = np.load(os.path.join(self.dir, "enrolled_group.npy"),
+                                          allow_pickle=False).astype(np.int32).reshape(-1)
+        except (OSError, ValueError):
+            self.enrolled_group = None  # older enrolment: one group
         self.learned = self._load("learned2.npy")
         self.learned_strong = self._load("learned_strong.npy", STRONG_DIM)
         self.others = self._load("others.npy")
@@ -147,43 +155,84 @@ def save_enrolment(user, embeddings, meta, strong=None):
         learned = os.path.join(path, name)
         if os.path.exists(learned):
             os.unlink(learned)  # learned data belongs to the old enrolment
-    # a new enrolment starts the adaptive bar afresh
-    update_meta(user, **meta, unlock_medians=[], unlock_count=0, adapted_bar=None,
-                enrolled_at=time.strftime("%Y-%m-%d %H:%M:%S"))
+    if strong is not None:
+        _save_ints(os.path.join(path, "enrolled_group.npy"), np.zeros(len(strong), np.int32))
+    else:
+        try:
+            os.unlink(os.path.join(path, "enrolled_group.npy"))
+        except FileNotFoundError:
+            pass
+    # a new enrolment starts the groups and their adaptive bars afresh
+    group = {"p10": meta["strong_self_p10"]} if meta.get("strong_self_p10") else {}
+    update_meta(user, **meta, groups={"0": group}, unlock_medians=None, unlock_count=None,
+                adapted_bar=None, enrolled_at=time.strftime("%Y-%m-%d %H:%M:%S"))
+
+
+def _save_ints(path, array):
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            np.save(f, np.asarray(array, np.int32))
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except BaseException:
+        os.unlink(tmp)
+        raise
+
+
+def _groups(g):
+    """The gallery's group ids (one per enrolled row) and group info."""
+    from .scan import sessions_of
+    ids = g.enrolled_group
+    if ids is None or len(ids) != len(g.enrolled_strong):
+        ids = np.zeros(len(g.enrolled_strong), np.int32)
+    return ids, {k: dict(v) for k, v in sessions_of(g).items()}
 
 
 ENROLLED_CAP = 48
 
 
-def add_enrolment(user, vectors, strong):
-    """Add samples to an existing enrolment (facelock improve), keeping the
-    learned samples and the adaptive bar. When there are more than
-    ENROLLED_CAP, the most varied set is kept (farthest-point on AuraFace),
-    always including every new sample's closest coverage. Returns the count."""
+def add_enrolment(user, vectors, strong, p10=None):
+    """Add a capture to an existing enrolment (facelock improve) as a new
+    group with its own bar (from p10, how closely the capture matched
+    itself), keeping the learned samples and the other groups' bars. When
+    there are more than ENROLLED_CAP samples, the most varied set is kept
+    (farthest-point on AuraFace), starting from the new ones.
+    Returns (sample count, new group id)."""
     g = Gallery(user)
+    ids, groups = _groups(g)
+    new_id = int(max([int(k) for k in groups] + [int(i) for i in ids] + [-1])) + 1
     weak = np.vstack([g.enrolled, np.asarray(vectors, np.float32)])
     strong_all = np.vstack([g.enrolled_strong, np.asarray(strong, np.float32)])
+    ids = np.concatenate([ids, np.full(len(strong), new_id, np.int32)])
     if len(strong_all) > ENROLLED_CAP:
         chosen = [len(g.enrolled_strong)]  # start from the first new sample
         while len(chosen) < ENROLLED_CAP:
             sims = (strong_all @ strong_all[chosen].T).max(axis=1)
             sims[chosen] = 2
             chosen.append(int(np.argmin(sims)))
-        weak, strong_all = weak[chosen], strong_all[chosen]
+        weak, strong_all, ids = weak[chosen], strong_all[chosen], ids[chosen]
+    groups[str(new_id)] = {"p10": round(float(p10), 3)} if p10 else {}
+    groups = {k: v for k, v in groups.items() if int(k) in set(int(i) for i in ids)}
     _save(os.path.join(g.dir, "enrolled.npy"), weak)
     _save(os.path.join(g.dir, "enrolled_strong.npy"), strong_all)
-    return len(strong_all)
+    _save_ints(os.path.join(g.dir, "enrolled_group.npy"), ids)
+    update_meta(user, groups=groups)
+    return len(strong_all), new_id
 
 
-def record_unlock(user, median, current_bar, keep=30):
-    """Remember the AuraFace median of a face unlock and move the adaptive
-    bar (scan.next_bar). Returns the new bar."""
+def record_unlock(user, median, group, current_bar, keep=30):
+    """Remember the AuraFace median of a face unlock in the group it matched
+    and move that group's adaptive bar (scan.next_bar): good-light unlocks
+    tighten the good-light bar, never the dim-light one. Returns the bar."""
     from .scan import next_bar
-    meta = load_meta(user)
-    medians = list(meta.get("unlock_medians", [])) + [round(float(median), 3)]
-    count = int(meta.get("unlock_count", len(medians) - 1)) + 1
+    _, groups = _groups(Gallery(user))
+    info = groups.setdefault(str(group), {})
+    medians = list(info.get("unlock_medians", [])) + [round(float(median), 3)]
+    count = int(info.get("unlock_count", len(medians) - 1)) + 1
     bar = next_bar(current_bar, [0.0] * max(0, count - len(medians)) + medians)
-    update_meta(user, unlock_medians=medians[-keep:], unlock_count=count, adapted_bar=bar)
+    info.update(unlock_medians=medians[-keep:], unlock_count=count, adapted=bar)
+    update_meta(user, groups=groups)
     return bar
 
 

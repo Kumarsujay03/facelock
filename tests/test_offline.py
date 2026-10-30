@@ -109,7 +109,7 @@ class LookAlikeTests(unittest.TestCase):
             w = toward(base, unit(1, seed + i)[0], weak_sim)
             s = toward(base_s, unit_dim(1, seed + i, 512)[0], strong_sim)
             ws, _, _ = self.scan.frame_score(w, self.g, self.cfg)
-            ss, _, _ = self.scan.strong_score(s, self.g, self.cfg)
+            ss, *_ = self.scan.strong_score(s, self.g, self.cfg)
             out.append((ws, ss, s))
         return out
 
@@ -147,10 +147,10 @@ class LookAlikeTests(unittest.TestCase):
         bro_w = toward(self.me, unit(1, 80)[0], 0.52)
         bro_s = toward(self.me_s, unit_dim(1, 80, 512)[0], 0.5)
         self.g.add_others([bro_w], [bro_s])
-        s, _, other = self.scan.strong_score(toward(bro_s, unit_dim(1, 81, 512)[0], 0.95), self.g, self.cfg)
+        s, _, other, *_ = self.scan.strong_score(toward(bro_s, unit_dim(1, 81, 512)[0], 0.95), self.g, self.cfg)
         self.assertTrue(other)
         self.assertLessEqual(s, 0.0)
-        s, _, other = self.scan.strong_score(toward(self.me_s, unit_dim(1, 82, 512)[0], 0.9), self.g, self.cfg)
+        s, _, other, *_ = self.scan.strong_score(toward(self.me_s, unit_dim(1, 82, 512)[0], 0.9), self.g, self.cfg)
         self.assertFalse(other)
 
     def test_old_learned_data_is_discarded(self):
@@ -287,15 +287,14 @@ class AdaptiveBarTests(unittest.TestCase):
         store.save_enrolment("finn", unit(5, 30), {}, strong=unit_dim(5, 30, 512))
         bar = 0.638
         for _ in range(35):
-            bar = store.record_unlock("finn", 0.85, bar)
-        meta = store.load_meta("finn")
-        self.assertEqual(len(meta["unlock_medians"]), 30)
-        self.assertEqual(meta["unlock_count"], 35)
-        self.assertGreater(meta["adapted_bar"], 0.638)
-        g = type("G", (), {"meta": meta})()
-        self.assertEqual(self.scan.strong_bar(g, self.cfg), meta["adapted_bar"])
+            bar = store.record_unlock("finn", 0.85, 0, bar)
+        info = store.load_meta("finn")["groups"]["0"]
+        self.assertEqual(len(info["unlock_medians"]), 30)
+        self.assertEqual(info["unlock_count"], 35)
+        self.assertGreater(info["adapted"], 0.638)
+        self.assertEqual(self.scan.strong_bar(store.Gallery("finn"), self.cfg), info["adapted"])
         store.save_enrolment("finn", unit(5, 31), {}, strong=unit_dim(5, 31, 512))
-        self.assertIsNone(store.load_meta("finn")["adapted_bar"])
+        self.assertEqual(store.load_meta("finn")["groups"], {"0": {}})
 
 
 class ImproveTests(unittest.TestCase):
@@ -303,13 +302,15 @@ class ImproveTests(unittest.TestCase):
         store.save_enrolment("gus", unit(16, 40), {}, strong=unit_dim(16, 40, 512))
         g = store.Gallery("gus")
         g.learn(unit(1, 41)[0], unit_dim(1, 41, 512)[0], cap=40)
-        store.record_unlock("gus", 0.8, 0.638)
-        n = store.add_enrolment("gus", unit(16, 42), unit_dim(16, 42, 512))
+        store.record_unlock("gus", 0.8, 0, 0.638)
+        n, group = store.add_enrolment("gus", unit(16, 42), unit_dim(16, 42, 512), p10=0.7)
         g = store.Gallery("gus")
-        self.assertEqual(n, 32)
+        self.assertEqual((n, group), (32, 1))
         self.assertEqual(len(g.enrolled), len(g.enrolled_strong))
-        self.assertEqual(len(g.learned), 1)                        # learning kept
-        self.assertEqual(store.load_meta("gus")["unlock_count"], 1)  # bar history kept
+        self.assertEqual(list(g.enrolled_group), [0] * 16 + [1] * 16)
+        self.assertEqual(len(g.learned), 1)                                 # learning kept
+        self.assertEqual(store.load_meta("gus")["groups"]["0"]["unlock_count"], 1)  # bar history kept
+        self.assertEqual(store.load_meta("gus")["groups"]["1"], {"p10": 0.7})
 
     def test_capped_and_keeps_new_samples(self):
         store.save_enrolment("hal", unit(16, 50), {}, strong=unit_dim(16, 50, 512))
@@ -317,8 +318,67 @@ class ImproveTests(unittest.TestCase):
             store.add_enrolment("hal", unit(16, 51 + i), unit_dim(16, 51 + i, 512))
         g = store.Gallery("hal")
         self.assertEqual(len(g.enrolled_strong), store.ENROLLED_CAP)
+        self.assertEqual(len(g.enrolled_group), store.ENROLLED_CAP)
         newest = unit_dim(16, 54, 512)
         self.assertTrue(any(np.allclose(newest[0], row) for row in g.enrolled_strong))
+
+
+class GroupBarTests(unittest.TestCase):
+    """A friend enrolled in good light (his face matched itself at 0.83 in
+    one capture, bar 0.75), then added dim bedroom light. In 1.2.7 the single
+    0.75 bar refused him in dim light, where he scores 0.62-0.70. Each capture
+    now has its own bar."""
+
+    def setUp(self):
+        from facelock import scan
+        self.scan = scan
+        self.cfg = config.Config()
+        self.bright, self.dim = unit_dim(1, 60, 512)[0], unit_dim(1, 61, 512)[0]
+        self.dim = toward(self.bright, self.dim, 0.55)  # same person, very different light
+        bright = np.array([toward(self.bright, unit_dim(1, 62 + i, 512)[0], 0.93) for i in range(16)])
+        dim = np.array([toward(self.dim, unit_dim(1, 80 + i, 512)[0], 0.88) for i in range(16)])
+        store.save_enrolment("ivy", unit(16, 63), {"strong_self_p10": 0.83}, strong=bright)
+        store.add_enrolment("ivy", unit(16, 64), dim, p10=0.72)
+        self.g = store.Gallery("ivy")
+
+    def window(self, base, sim, seed):
+        out = []
+        for i in range(5):
+            v = toward(base, unit_dim(1, seed + i, 512)[0], sim)
+            s, _, _, group, bar = self.scan.strong_score(v, self.g, self.cfg)
+            out.append((0.8, s, v, bar, group))
+        return out
+
+    def test_each_capture_has_its_own_bar(self):
+        bars = self.scan.strong_bars(self.g, self.cfg)
+        self.assertEqual(bars[0], 0.75)
+        self.assertEqual(bars[1], 0.64)
+
+    def test_dim_light_unlocks_against_the_dim_group(self):
+        w = self.window(self.dim, 0.80, 100)
+        self.assertTrue(self.scan.decide(w, self.cfg))
+        self.assertTrue(all(f[4] == 1 for f in w))
+
+    def test_bright_light_still_needs_the_strict_bar(self):
+        # a face matching only the bright group at 0.70 is below its 0.75 bar
+        w = [(0.8, 0.70, self.bright, 0.75, 0)] * 5
+        self.assertFalse(self.scan.decide(w, self.cfg))
+
+    def test_no_group_bar_below_the_floor(self):
+        store.add_enrolment("ivy", unit(16, 65), unit_dim(16, 65, 512), p10=0.3)
+        self.assertGreaterEqual(min(self.scan.strong_bars(store.Gallery("ivy"), self.cfg).values()),
+                                self.scan.STRONG_FLOOR)
+
+    def test_legacy_single_bar_is_capped(self):
+        g = type("G", (), {"meta": {"strong_self_p10": 0.83}})()
+        self.assertEqual(self.scan.strong_bar(g, self.cfg), 0.70)
+
+    def test_unlocks_tighten_only_their_own_group(self):
+        bar = 0.75
+        for _ in range(40):
+            bar = store.record_unlock("ivy", 0.95, 0, bar)
+        bars = self.scan.strong_bars(store.Gallery("ivy"), self.cfg)
+        self.assertEqual(bars[1], 0.64)
 
 
 class BlinkTests(unittest.TestCase):

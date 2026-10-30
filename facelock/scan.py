@@ -34,6 +34,8 @@ class Result:
     best: float = -1.0        # best SFace frame score
     best_strong: float = -1.0  # best AuraFace frame score
     median_strong: float = None  # AuraFace median of the deciding frames
+    group: int = None         # the sample group they matched best
+    group_bar: float = None
     learn_vec: np.ndarray = None
     learn_strong: np.ndarray = None
     blinked: bool = False
@@ -63,17 +65,78 @@ def frame_score(vec, gallery, cfg):
     return score, enrolled_score, False
 
 
+def groups_of(gallery):
+    """The enrolment's sample groups: {group id: (row indices, group info)}.
+    Each capture (the enrolment, every `facelock improve`) is a group with
+    its own bar, because a face in dim light matches dim-light samples less
+    closely than a face in good light matches good-light samples."""
+    ids = getattr(gallery, "enrolled_group", None)
+    n = len(getattr(gallery, "enrolled_strong", ()))
+    if ids is None or len(ids) != n:
+        ids = np.zeros(n, np.int32)
+    info = sessions_of(gallery)
+    present = sorted(set(int(i) for i in ids)) or sorted(int(k) for k in info)
+    return {g: (np.flatnonzero(ids == g), info.get(str(g), {})) for g in present}
+
+
+def sessions_of(gallery):
+    """Per-group info from the face data's meta.json. Enrolments made before
+    groups existed (1.2.7 and older) become one group whose bar is the one
+    measured at enrolment: 1.2.7's `improve` could raise the old single bar
+    from a good-light capture, which then refused the user in dim light."""
+    meta = gallery.meta
+    if isinstance(meta.get("groups"), dict):
+        return meta["groups"]
+    legacy = {}
+    if meta.get("strong_self_p10"):
+        # at most 0.70: a 1.2.7 `improve` may have raised it from a single
+        # well-lit capture. Enrolling again gives proper per-group bars.
+        legacy["bar"] = min(personal_bar(float(meta["strong_self_p10"])), 0.70)
+    if meta.get("adapted_bar"):
+        legacy["adapted"] = min(float(meta["adapted_bar"]), 0.70)
+    return {"0": legacy}
+
+
+def group_bar(info, cfg):
+    """A group's AuraFace bar: measured from its own capture (or kept from an
+    older enrolment), raised by its own unlocks, never below STRONG_FLOOR or
+    the configured minimum."""
+    bar = max(STRONG_FLOOR, cfg.strong_accept)
+    if info.get("p10"):
+        bar = max(bar, personal_bar(float(info["p10"])))
+    elif info.get("bar"):
+        bar = max(bar, float(info["bar"]))
+    if info.get("adapted"):
+        bar = max(bar, float(info["adapted"]))
+    return round(bar, 3)
+
+
+def strong_bars(gallery, cfg):
+    """{group id: bar}"""
+    return {g: group_bar(info, cfg) for g, (_, info) in groups_of(gallery).items()}
+
+
 def strong_score(vec, gallery, cfg):
-    """AuraFace: (score, enrolled score, refused as an 'other') for one face.
-    The score is the mean of the 3 closest enrolled samples, so a single
-    similar sample isn't enough."""
-    enrolled_score = top_similarity(vec, gallery.enrolled_strong)
+    """AuraFace: (score, enrolled score, refused as an 'other', group, bar).
+
+    The face is scored against each sample group (mean of its k closest
+    samples) and judged by the group where it clears that group's bar by the
+    most; that group's bar is the bar for this frame."""
+    best = None
+    for g, (rows, info) in groups_of(gallery).items():
+        if not len(rows):
+            continue
+        s = top_similarity(vec, gallery.enrolled_strong[rows])
+        bar = group_bar(info, cfg)
+        if best is None or s - bar > best[0] - best[2]:
+            best = (s, g, bar)
+    enrolled_score, group, bar = best
     score = enrolled_score
     if enrolled_score >= cfg.strong_learned_floor and len(gallery.learned_strong):
         score = max(score, top_similarity(vec, gallery.learned_strong))
     if len(gallery.others_strong) and similarity(vec, gallery.others_strong) >= score - cfg.other_margin:
-        return min(score, 0.0), enrolled_score, True
-    return score, enrolled_score, False
+        return min(score, 0.0), enrolled_score, True, group, bar
+    return score, enrolled_score, False, group, bar
 
 
 # The lowest AuraFace bar anyone gets, whatever the settings say (they can
@@ -117,34 +180,30 @@ def next_bar(current, medians):
     return round(min(current + ADAPT_STEP, target), 3)
 
 
-def strong_bar(gallery, cfg):
-    """The user's AuraFace bar, the highest of: STRONG_FLOOR, the configured
-    value, the bar from how consistently their face matched itself at
-    enrolment, and the bar learned from their recent unlocks. It never goes
-    below the enrolment bar; re-enrolling resets the learned part."""
-    bar = max(STRONG_FLOOR, cfg.strong_accept)
-    p10 = gallery.meta.get("strong_self_p10")
-    if p10:
-        bar = max(bar, personal_bar(float(p10)))
-    adapted = gallery.meta.get("adapted_bar")
-    if adapted:
-        bar = max(bar, float(adapted))
-    return bar
+def strong_bar(gallery, cfg, group=None):
+    """The AuraFace bar of one group (by default the strictest)."""
+    bars = strong_bars(gallery, cfg)
+    if group is not None and group in bars:
+        return bars[group]
+    return max(bars.values()) if bars else max(STRONG_FLOOR, cfg.strong_accept)
 
 
-def decide(window, cfg, bar):
+def decide(window, cfg, bar=None):
     """window: the latest checked frames as (sface score, strong score,
-    strong vector). True if they prove it is the user."""
+    strong vector[, that frame's bar]). True if they prove it is the user:
+    the median margin over each frame's bar is not negative, no frame is
+    more than strong_spread below its bar, all frames show one person, and
+    SFace agrees."""
     if len(window) < cfg.strong_frames:
         return False
     recent = window[-cfg.strong_frames:]
     sface = np.array([w[0] for w in recent])
-    strong = np.array([w[1] for w in recent])
+    margin = np.array([w[1] - (w[3] if len(w) > 3 else bar) for w in recent])
     vecs = np.array([w[2] for w in recent])
     same_person = float((vecs @ vecs.T).min()) >= cfg.strong_same_person
     return (same_person
-            and float(np.median(strong)) >= bar
-            and float(strong.min()) >= bar - cfg.strong_spread
+            and float(np.median(margin)) >= 0
+            and float(margin.min()) >= -cfg.strong_spread
             and float(np.median(sface)) >= max(cfg.accept, SFACE_FLOOR))
 
 
@@ -155,7 +214,6 @@ def run(engine, cfg, gallery, emit=lambda s: None, alive=lambda: True,
     need_blink = cfg.liveness == "blink"
     watch_blink = cfg.liveness in ("blink", "observe")  # observe: recorded, never waited for
     blink = BlinkDetector(*gallery.blink) if gallery.blink else BlinkDetector()
-    bar = strong_bar(gallery, cfg)
     deadline = cfg.scan_seconds
     attempt_start = None      # time the current attempt saw its first face
     last_face = None
@@ -219,11 +277,11 @@ def run(engine, cfg, gallery, emit=lambda s: None, alive=lambda: True,
             if score >= cfg.sface_gate:
                 # worth the strong model's time
                 strong_vec = engine.embed_strong(frame, face, crop)
-                strong, strong_enrolled, other = strong_score(strong_vec, gallery, cfg)
+                strong, strong_enrolled, other, group, bar = strong_score(strong_vec, gallery, cfg)
                 res.other_seen = res.other_seen or other
                 res.strong_scores.append(round(strong, 3))
                 res.best_strong = max(res.best_strong, strong)
-                window.append((score, strong, strong_vec))
+                window.append((score, strong, strong_vec, bar, group))
                 if (strong_enrolled >= cfg.learn_strong and enrolled_score >= cfg.learn_from
                         and not other and (res.learn_strong is None
                                            or similarity(strong_vec, gallery.learned_strong)
@@ -244,9 +302,13 @@ def run(engine, cfg, gallery, emit=lambda s: None, alive=lambda: True,
                                   box=[round(float(v)) for v in face.box],
                                   lm=face.landmarks.round().tolist(), blinked=res.blinked, **blink.last))
 
-            if matched_at is None and decide(window, cfg, bar):
+            if matched_at is None and decide(window, cfg):
                 matched_at = t
-                res.median_strong = round(float(np.median([w[1] for w in window[-cfg.strong_frames:]])), 3)
+                recent = window[-cfg.strong_frames:]
+                res.median_strong = round(float(np.median([w[1] for w in recent])), 3)
+                groups = [w[4] for w in recent]
+                res.group = max(set(groups), key=groups.count)
+                res.group_bar = [w[3] for w in recent if w[4] == res.group][0]
             if matched_at is not None:
                 if not need_blink or res.blinked:
                     res.ok, res.reason = True, "matched"

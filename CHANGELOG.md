@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.3.0
+
+**A bar per condition.**
+
+- Problem: one bar per user, set by the best capture. A friend enrolled in
+  good light; `improve` in similar light raised his bar to 0.75; in dim
+  bedroom light his own face scores 0.56-0.71, so he was refused every
+  time, even after adding dim-light samples.
+- Each capture (the enrolment, every `facelock improve`) is now a sample
+  group with its own bar, measured from that capture (minus 0.08, never
+  below the 0.62 floor). A face is judged against the group it matches best,
+  with that group's bar. `improve` no longer raises a single global bar.
+- The adaptive bar works per group: good-light unlocks never tighten the
+  dim-light bar.
+- Enrolments from 1.2.x keep working as one group, with its bar capped at
+  0.70 (1.2.7 could have raised it from one well-lit capture). For per-
+  condition bars: enrol again in good light, then `improve` in the others.
+- `facelock status` and `stats` list every group and its bar.
+
 ## 1.2.7
 
 - `facelock improve` raises the user's personal bar when the new capture

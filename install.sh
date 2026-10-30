@@ -262,6 +262,10 @@ if [ "$MODE" = update ]; then
         echo "Face unlock now checks every face with two models: enrol again before it works:"
         echo "  sudo facelock enroll"
     fi
+    if ls /var/lib/facelock/*/meta.json >/dev/null 2>&1 && ! grep -lq '"groups"' /var/lib/facelock/*/meta.json; then
+        echo "Each capture now gets its own bar (good light, dim light, glasses). For that,"
+        echo "enrol once in good light, then run 'sudo facelock improve' in each other condition."
+    fi
 else
     echo "Installed facelock $VERSION. Next:"
     echo "  1. sudo facelock enroll     (look at the camera and follow the prompts)"

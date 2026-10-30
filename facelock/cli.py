@@ -99,19 +99,17 @@ def cmd_improve(a):
     if match < bar:
         # glasses or dim light lower the score: exactly what this is for,
         # so ask rather than refuse
-        print(f"These frames match your enrolment at {match:.2f} (your bar is {bar}), as expected "
-              f"for glasses or dim light. Only add them if it was you alone in front of the camera.")
+        print(f"These frames match your enrolment at {match:.2f} (its strictest bar is {bar}), as "
+              f"expected for glasses or dim light. Only add them if it was you alone in front of "
+              f"the camera.")
         if not sys.stdin.isatty() or input("Add them? [y/N] ").strip().lower() not in ("y", "yes"):
             sys.exit("Not added.")
-    count = store.add_enrolment(a.user, vectors, strong)
-    # the personal bar follows the user's own consistency: raise it if this
-    # capture matched itself more closely than the enrolment did, never lower
-    old_p10 = float(g.meta.get("strong_self_p10") or 0)
-    if meta.get("strong_self_p10", 0) > old_p10:
-        store.update_meta(a.user, strong_self_p10=meta["strong_self_p10"])
-    new_bar = scan.strong_bar(store.Gallery(a.user), cfg)
-    print(f"Added. {count} enrolled samples now (they matched your enrolment at {match:.2f}); "
-          f"learned samples are kept. Your bar: {new_bar}" + (" (raised)" if new_bar > bar else "") + ".")
+    count, group = store.add_enrolment(a.user, vectors, strong, p10=meta.get("strong_self_p10"))
+    bars = scan.strong_bars(store.Gallery(a.user), cfg)
+    print(f"Added as group {group}: {count} enrolled samples now (they matched your enrolment at "
+          f"{match:.2f}). Its bar is {bars.get(group)}, from how closely these frames match "
+          f"each other; in these conditions your face is judged against this group. "
+          f"Other groups keep their bars.")
 
 
 def cmd_calibrate(a):
@@ -135,7 +133,8 @@ def cmd_test(a):
         sys.exit(f"{a.user}'s face was enrolled before the two-model check. Enrol again: sudo facelock enroll")
     print(f"{len(gallery.enrolled)} enrolled + {len(gallery.learned)} learned samples, "
           f"{len(gallery.others)} 'other' samples. Unlocks when {cfg.strong_frames} frames in a row show "
-          f"one person with AuraFace median >= {scan.strong_bar(gallery, cfg)} and SFace median >= "
+          f"one person with AuraFace at or above the bar of the sample group it matches "
+          f"({', '.join(f'{k}: {v}' for k, v in scan.strong_bars(gallery, cfg).items())}) and SFace median >= "
           f"{cfg.accept}. Look at the camera" + (" and blink." if cfg.liveness == "blink" else "."))
 
     def verbose(t, score, strong, face, lum, blinked):
@@ -398,20 +397,17 @@ def cmd_import_log(a):
 
 
 def bar_story(g, cfg):
-    """The user's AuraFace bar and where it comes from."""
+    """Each sample group's AuraFace bar and where it comes from."""
     from . import scan
-    parts = [f"floor {scan.STRONG_FLOOR}"]
-    if g.meta.get("strong_self_p10"):
-        parts.append(f"enrolment {scan.personal_bar(float(g.meta['strong_self_p10']))}")
-    count = int(g.meta.get("unlock_count", 0))
-    medians = g.meta.get("unlock_medians", [])
-    if count < scan.ADAPT_AFTER:
-        parts.append(f"collecting your scores: {count} of {scan.ADAPT_AFTER} unlocks")
-    else:
-        import numpy as np
-        parts.append(f"raised by your unlocks to {g.meta.get('adapted_bar')} "
-                     f"(your recent median {float(np.median(medians)):.2f})")
-    return f"{scan.strong_bar(g, cfg)} (" + ", ".join(parts) + ")"
+    parts = []
+    for gid, (rows, info) in scan.groups_of(g).items():
+        bar = scan.group_bar(info, cfg)
+        count = int(info.get("unlock_count", 0))
+        how = ("enrolment" if gid == 0 else f"improve #{gid}")
+        detail = (f"collecting unlocks {count}/{scan.ADAPT_AFTER}" if count < scan.ADAPT_AFTER
+                  else f"raised by {count} unlocks")
+        parts.append(f"group {gid} ({how}, {len(rows)} samples): {bar}, {detail}")
+    return f"floor {scan.STRONG_FLOOR}; " + "; ".join(parts)
 
 
 def cmd_status(a):
