@@ -198,7 +198,9 @@ chmod -R a+rX "/usr/share/gnome-shell/extensions/$UUID"
 if [ -d /etc/dconf/db ]; then
     # the login screen: keep the extensions other files enable, add ours
     # (dconf uses the last file that sets a key, so this one includes all)
-    if [ ! -f /etc/dconf/profile/gdm ]; then
+    # the login screen's settings profile: the distribution's if it has one
+    if [ ! -f /etc/dconf/profile/gdm ] && [ ! -f /usr/share/dconf/profile/gdm ]; then
+        install -d -m 755 /etc/dconf/profile
         printf 'user-db:user\nsystem-db:gdm\nfile-db:/usr/share/gdm/greeter-dconf-defaults\n' > /etc/dconf/profile/gdm
     fi
     install -d -m 755 /etc/dconf/db/gdm.d
