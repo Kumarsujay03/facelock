@@ -35,12 +35,14 @@ def cmd_enroll(a):
     cfg = config.load()
     print(f"Enrolling {a.user}. Sit about an arm's length from the screen, in normal light.")
     try:
-        vectors, meta = capture(Engine(), cfg)
+        vectors, strong, meta = capture(Engine(), cfg)
     except RuntimeError as e:
         sys.exit(f"Enrolment failed: {e}")
-    store.save_enrolment(a.user, vectors, meta)
+    store.save_enrolment(a.user, vectors, meta, strong=strong)
     print(f"Face saved: kept {meta['kept']} of {meta['faces']} face frames "
           f"(face ~{meta['median_face_px']:.0f}px, consistency {meta['self_similarity']}).")
+    print(f"Your AuraFace bar: {meta['strong_accept']} (your face matches itself at "
+          f"{meta['strong_self_p10']} or better 90% of the time; strangers stay below 0.35).")
     if cfg.liveness != "off":
         print()
         do_calibrate(a.user, Engine(), cfg)
@@ -80,15 +82,18 @@ def cmd_test(a):
     gallery = store.Gallery(a.user)
     if not gallery.enrolled_any:
         sys.exit(f"No face enrolled for {a.user}. Run: sudo facelock enroll")
-    print(f"{len(gallery.enrolled)} enrolled + {len(gallery.learned)} learned samples; "
-          f"accept {cfg.accept} on {cfg.accept_frames} frames or {cfg.accept_instant} on one, "
-          f"{len(gallery.others)} 'other' samples, liveness {cfg.liveness}. Look at the camera"
-          + (" and blink." if cfg.liveness == "blink" else "."))
+    if not gallery.strong_enrolled:
+        sys.exit(f"{a.user}'s face was enrolled before the two-model check. Enrol again: sudo facelock enroll")
+    print(f"{len(gallery.enrolled)} enrolled + {len(gallery.learned)} learned samples, "
+          f"{len(gallery.others)} 'other' samples. Unlocks when {cfg.strong_frames} frames in a row show "
+          f"one person with AuraFace median >= {scan.strong_bar(gallery, cfg)} and SFace median >= "
+          f"{cfg.accept}. Look at the camera" + (" and blink." if cfg.liveness == "blink" else "."))
 
-    def verbose(t, score, face, lum, blinked):
+    def verbose(t, score, strong, face, lum, blinked):
         if a.verbose:
-            print(f"  {t:5.2f}s score {score:.3f} face {face.size:.0f}px luma {lum:5.1f}"
-                  + (" blink" if blinked else ""))
+            print(f"  {t:5.2f}s SFace {score:.3f} AuraFace "
+                  + ("  -  " if strong is None else f"{strong:.3f}")
+                  + f" face {face.size:.0f}px luma {lum:5.1f}" + (" blink" if blinked else ""))
 
     trace = [] if a.trace else None
     res = scan.run(Engine(), cfg, gallery, emit=lambda s: print(f"  [{s}]"), verbose=verbose, trace=trace)
@@ -100,11 +105,14 @@ def cmd_test(a):
         if all(owner):
             os.chown(a.trace, int(owner[0]), int(owner[1]))
         print(f"Trace (numbers only, no images) saved to {a.trace}")
-    print(f"Result: {'UNLOCK' if res.ok else 'no unlock'} ({res.reason}); best score {res.best:.3f}, "
+    print(f"Result: {'UNLOCK' if res.ok else 'no unlock'} ({res.reason}); "
+          f"AuraFace median {res.median_strong}, best {res.best_strong:.3f}; SFace best {res.best:.3f}; "
           f"first face at {res.first_face_s and round(res.first_face_s, 2)}s, took {res.elapsed}s, "
-          f"brightness {res.luma}, blink {res.blinked}, failed attempts {res.failures}")
+          f"brightness {res.luma}, failed attempts {res.failures}" + (", refused an 'other' face" if res.other_seen else ""))
+    if res.strong_scores:
+        print("AuraFace:", " ".join(f"{s:.2f}" for s in res.strong_scores[:40]))
     if res.scores:
-        print("Scores:", " ".join(f"{s:.2f}" for s in res.scores[:40]))
+        print("SFace:   ", " ".join(f"{s:.2f}" for s in res.scores[:40]))
     sys.exit(0 if res.ok else 1)
 
 
@@ -120,15 +128,15 @@ def cmd_add_other(a):
     print(f"Capturing someone who must NOT unlock as {a.user}.")
     print(f"Ask them to sit in front of the camera ({a.user} should stay out of view).")
     try:
-        vectors, meta = capture(Engine(), config.load())
+        vectors, strong, meta = capture(Engine(), config.load())
     except RuntimeError as e:
         sys.exit(f"Capture failed: {e}")
-    from .engine import similarity
-    closest = max(similarity(v, g.enrolled) for v in vectors)
-    if closest >= 0.80:
+    from .engine import top_similarity
+    closest = max(top_similarity(v, g.enrolled_strong) for v in strong) if g.strong_enrolled else 0.0
+    if closest >= 0.70:
         sys.exit(f"That looks like {a.user} (similarity {closest:.2f}), so it wasn't saved. "
                  f"Make sure only the other person is in view.")
-    g.add_others(vectors)
+    g.add_others(vectors, strong)
     print(f"Saved {len(vectors)} samples. Their closest match to {a.user} was {closest:.2f}; "
           f"faces closer to them than to {a.user} are now refused.")
     print(f"Have them try: lock the screen and look at the camera. ({len(g.others)} 'other' samples in total)")

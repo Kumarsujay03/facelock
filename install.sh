@@ -123,17 +123,18 @@ fi
 ln -sf "$DEST/bin/facelock" /usr/local/bin/facelock
 install -d -m 755 /etc/facelock
 CONF=/etc/facelock/facelock.conf
-if [ -f "$CONF" ] && ! grep -q '^accept[[:space:]]*=' "$CONF"; then
-    # settings from facelock 1.0.x: their match settings let a look-alike in.
-    # Keep a copy, install the new file, and carry over the other settings.
-    cp -a "$CONF" "$CONF.1.0"
+if [ -f "$CONF" ] && ! grep -q '^strong_accept[[:space:]]*=' "$CONF"; then
+    # settings from before the two-model check (facelock 1.0 and 1.1): their
+    # match settings no longer apply. Keep a copy, install the new file, and
+    # carry over the other settings.
+    cp -a "$CONF" "$CONF.old"
     install -m 644 "$HERE/system/facelock.conf" "$CONF"
-    for key in device scan_seconds attempt_seconds max_failures min_face_px liveness \
+    for key in device scan_seconds max_failures min_face_px liveness \
                lowlight dark_luma light_after auto; do
-        value=$(sed -n "s/^${key}[[:space:]]*=[[:space:]]*//p" "$CONF.1.0" | head -1)
+        value=$(sed -n "s/^${key}[[:space:]]*=[[:space:]]*//p" "$CONF.old" | head -1)
         [ -n "$value" ] && sed -i "s|^${key}[[:space:]]*=.*|${key} = ${value}|" "$CONF"
     done
-    echo "   new match settings (the old file is kept as $CONF.1.0)"
+    echo "   new match settings (the old file is kept as $CONF.old)"
 fi
 [ -f "$CONF" ] || install -m 644 "$HERE/system/facelock.conf" "$CONF"
 install -m 644 "$HERE/system/facelockd.service" "$HERE/system/facelock-update.service" \
@@ -256,6 +257,11 @@ fi
 echo
 if [ "$MODE" = update ]; then
     echo "Updated to facelock $VERSION. Log out and back in to load the new extension."
+    if [ -d /var/lib/facelock ] && ! ls /var/lib/facelock/*/enrolled_strong.npy >/dev/null 2>&1 &&
+       ls /var/lib/facelock/*/enrolled.npy >/dev/null 2>&1; then
+        echo "Face unlock now checks every face with two models: enrol again before it works:"
+        echo "  sudo facelock enroll"
+    fi
 else
     echo "Installed facelock $VERSION. Next:"
     echo "  1. sudo facelock enroll     (look at the camera and follow the prompts)"

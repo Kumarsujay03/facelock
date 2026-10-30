@@ -30,7 +30,7 @@ and password keep working at the same time; whichever succeeds first wins.
   laptops have a USB (UVC) webcam. Newer Intel laptops with an IPU6/IPU7 MIPI
   camera need the Intel camera relay (`v4l2-relayd`) that Ubuntu installs for
   them. On Snapdragon X laptops the camera must already work in Linux.
-- Internet once during installation. It downloads the two face models and
+- Internet once during installation (about 300 MB). It downloads the three face models and
   installs NumPy and OpenCV into a private Python environment in
   `/opt/facelock`; your system's Python is not touched.
 
@@ -39,7 +39,7 @@ and password keep working at the same time; whichever succeeds first wins.
 Download the latest release, or clone the repository, then:
 
 ```sh
-tar xf facelock-1.1.0.tar.gz && cd facelock-1.1.0     # or: git clone https://github.com/Kumarsujay03/facelock && cd facelock
+tar xf facelock-1.2.0.tar.gz && cd facelock-1.2.0     # or: git clone https://github.com/Kumarsujay03/facelock && cd facelock
 sudo ./install.sh
 ```
 
@@ -62,7 +62,7 @@ Log out and back in once so GNOME loads the extension. Then lock the screen
 | Situation | What happens |
 |---|---|
 | Screen locked and dark, untouched | Camera off. Nothing runs. |
-| A key, the mouse or the touchpad after a moment of quiet, opening the lid | One scan, about half a second when it recognises you. |
+| A key, the mouse or the touchpad after a moment of quiet, opening the lid | One scan: about 1–1.5 seconds when it recognises you (5 frames, two models). |
 | Just locked with Super+L | No scan for the first 2 seconds. |
 | Login screen after boot or logout | Scans as soon as your user is shown. |
 | Dark room | After a first try in the room's light, the screen fades to white at full brightness for a moment, then back. Once until the screen has been off. |
@@ -214,7 +214,8 @@ wake the screen ──> GNOME Shell extension ──starts──> GDM conversati
      white light, ...)   │                                   │ /run/facelock/socket
                          └───────────── facelockd (root) <───┘
                                          camera → YuNet face detection
-                                                → SFace recognition
+                                                → SFace (fast first check)
+                                                → AuraFace (deciding check)
                                                 → blink check
                                                 → learning
 ```
@@ -237,12 +238,27 @@ one yourself.
 
 ## Security notes
 
-- **Look-alike relatives.** An ordinary webcam and face model can't always
-  tell close family apart. In facelock 1.0.x a brother unlocked his
-  sibling's laptop with scores of 0.48–0.54 against a match bar of 0.45, and
-  his face was then learned. 1.1.0 requires 0.58 on 3 frames (or 0.66 on
-  one against your enrolled face) and no longer learns weak or near-miss
-  scans. If someone in your home looks like you, add them as "not me":
+- **How a face is recognised.** Not by comparing pictures: each frame's
+  face is aligned by its landmarks and described by two independent neural
+  networks as a list of numbers capturing its features: the shape and layout
+  of the eyes, nose, mouth and jaw.
+  - **SFace:** 128 numbers, fast.
+  - **AuraFace:** 512 numbers, a ResNet100 trained with ArcFace's angular
+    margin loss, and much better at telling similar faces apart.
+
+  It unlocks only when **5 frames in a row** show the same person, AuraFace's
+  median similarity to your enrolment reaches your bar, no frame falls far
+  below it, and SFace agrees.
+- **Measured.** On the LFW benchmark, running the real decision code on
+  14,280 owner/intruder pairs (120 people), no intruder unlocked. The
+  highest any stranger's 5-photo median reached was 0.34; the minimum bar is
+  0.55, and enrolment raises it for faces that match themselves closely.
+- **Look-alike relatives.** Family is the hard case for any webcam face
+  unlock. In facelock 1.0.x a brother unlocked his sibling's laptop (single
+  model, scores 0.48–0.54 against a bar of 0.45) and his face was then
+  learned. 1.1 tightened the rules and stopped near-miss learning, and 1.2
+  adds AuraFace and the 5-frame check. If someone in your home looks like
+  you, also add them as "not me":
 
   ```sh
   sudo facelock add-other     # they sit in front of the camera, you stay out of view
@@ -250,8 +266,8 @@ one yourself.
 
   Any face closer to them than to you is then refused, and `facelock stats`
   counts those refusals. Then have them try the lock screen. If they still get
-  in, raise `accept` and `accept_instant` in `/etc/facelock/facelock.conf`,
-  or don't use face unlock on that laptop.
+  in, raise `strong_accept` in `/etc/facelock/facelock.conf` and tell us
+  (with `sudo facelock report`), or don't use face unlock on that laptop.
 
 - Face data never leaves the machine. Update checks are the only network
   access, and they come from the update timer, not the face service.
@@ -283,6 +299,8 @@ they all pass.
 
 ## Licence
 
-MIT, see [LICENSE](LICENSE). The face models come from the
-[OpenCV model zoo](https://github.com/opencv/opencv_zoo): YuNet (MIT) and
-SFace (Apache-2.0). See [models/README.md](models/README.md).
+MIT, see [LICENSE](LICENSE). The face models are downloaded at install:
+YuNet (MIT) and SFace (Apache-2.0) from the
+[OpenCV model zoo](https://github.com/opencv/opencv_zoo), and AuraFace
+(Apache-2.0) from [fal/AuraFace-v1](https://huggingface.co/fal/AuraFace-v1).
+See [models/README.md](models/README.md).

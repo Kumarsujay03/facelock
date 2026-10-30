@@ -81,6 +81,7 @@ def describe(e):
     best = e.get("best")
     parts = [f"{e['at']}  {e.get('user', '?'):<10} {outcome:<21}",
              f"score {best:.2f}" if best is not None and best >= 0 else "score  -  ",
+             f"AuraFace {e['strong']:.2f}" if e.get("strong") is not None and e["strong"] >= 0 else "AuraFace  - ",
              f"{e.get('seconds', 0):5.2f}s"]
     if e.get("failed"):
         parts.append(f"{e['failed']} failed tr{'y' if e['failed'] == 1 else 'ies'}")

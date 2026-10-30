@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.2.0
+
+**Security: two face models must agree, over 5 frames.**
+
+- A second, much stronger face model, AuraFace (512 features per face,
+  ResNet100 trained with ArcFace's angular margin loss, Apache-2.0), decides;
+  SFace stays as the first check.
+- It unlocks only when 5 frames in a row show one person, AuraFace's median
+  reaches the user's bar (0.55 at least, higher if enrolment measured a very
+  consistent face), no frame is far below it, and SFace agrees.
+- Measured with the real decision code on the LFW benchmark: no intruder
+  unlocked in 14,280 owner/intruder pairs; the highest stranger median was
+  0.34.
+- Unlocking takes about 1-1.5 s instead of 0.5 s.
+- **Enrol again after updating** (`sudo facelock enroll`): older enrolments
+  have no AuraFace data, and face unlock refuses to work on SFace alone.
+- `facelock add-other` captures both models too.
+- The install downloads about 260 MB more (the AuraFace model).
+
 ## 1.1.0
 
 **Security fix.**

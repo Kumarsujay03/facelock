@@ -31,6 +31,12 @@ ok "sockets: service root-only, stop socket open"
 [ -f "$pamdir/pam_face.so" ] || fail "pam_face.so not installed"
 grep -q '^auth[[:space:]]*requisite[[:space:]]*pam_face.so' /etc/pam.d/gdm-face || fail "gdm-face has no pam_face"
 ok "PAM module and /etc/pam.d/gdm-face"
+for m in face_detection_yunet_2023mar.onnx face_recognition_sface_2021dec.onnx auraface_glintr100.onnx; do
+    [ -s "/opt/facelock/models/$m" ] || fail "model $m missing"
+done
+(cd /opt/facelock/models && sha256sum -c --quiet SHA256SUMS) || fail "models don't match their checksums"
+grep -q '^strong_accept' /etc/facelock/facelock.conf || fail "config has no two-model settings"
+ok "all three face models and the two-model settings"
 [ -f /usr/share/gnome-shell/extensions/facelock@kumarsujay03.github.io/extension.js ] || fail "extension missing"
 grep -q facelock@kumarsujay03.github.io /etc/dconf/db/gdm.d/03-facelock || fail "extension not enabled for the login screen"
 grep -qx 'system-db:gdm' /etc/dconf/profile/gdm || fail "the login screen's dconf profile doesn't read gdm.d"

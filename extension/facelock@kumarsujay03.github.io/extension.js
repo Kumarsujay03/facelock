@@ -42,6 +42,7 @@ const STOP_TEXT = {
     failures: 'Use fingerprint or password',
     paused: 'Use fingerprint or password',
     camera: 'Camera unavailable',
+    reenroll: 'Face unlock needs a new enrolment',
 };
 const PREFIX = 'facelock:';
 

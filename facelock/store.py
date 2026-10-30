@@ -1,9 +1,13 @@
 """Per-user face data in /var/lib/facelock/<user>/ (root only).
 
-enrolled.npy  embeddings from enrolment, never changed by learning
-learned2.npy  embeddings added after strong unlocks, capped
-others.npy    faces that are NOT this user (facelock add-other): refused
+Each face sample is kept twice, once per model, row for row:
 
+enrolled.npy / enrolled_strong.npy   from enrolment, never changed by learning
+learned2.npy / learned_strong.npy    added after strong unlocks, capped
+others.npy / others_strong.npy       people who must NOT unlock (add-other)
+
+SFace rows are 128 numbers, AuraFace ("strong") rows 512. An enrolment from
+before AuraFace (facelock 1.1 or older) has no strong rows and must be redone.
 learned.npy from facelock 1.0.x is deleted unread: its learning rules were
 too loose and could take in a look-alike's face.
 """
@@ -46,74 +50,100 @@ def _save(path, array):
         raise
 
 
-def _load(path):
+SFACE_DIM, STRONG_DIM = 128, 512
+
+
+def _load(path, dim=SFACE_DIM):
     try:
         arr = np.load(path, allow_pickle=False)
+        return arr.reshape(-1, dim).astype(np.float32)
     except (OSError, ValueError):
-        return np.zeros((0, 128), np.float32)
-    return arr.reshape(-1, 128).astype(np.float32)
+        return np.zeros((0, dim), np.float32)
 
 
 class Gallery:
     def __init__(self, user):
         self.user = user
         self.dir = _dir(user)
-        self.enrolled = _load(os.path.join(self.dir, "enrolled.npy"))
         old = os.path.join(self.dir, "learned.npy")
         if os.path.exists(old):
             try:
                 os.unlink(old)
             except OSError:
                 pass
-        self.learned = _load(os.path.join(self.dir, "learned2.npy"))
-        self.others = _load(os.path.join(self.dir, "others.npy"))
+        self.enrolled = self._load("enrolled.npy")
+        self.enrolled_strong = self._load("enrolled_strong.npy", STRONG_DIM)
+        self.learned = self._load("learned2.npy")
+        self.learned_strong = self._load("learned_strong.npy", STRONG_DIM)
+        self.others = self._load("others.npy")
+        self.others_strong = self._load("others_strong.npy", STRONG_DIM)
+        # learned rows from before the strong model have no pair: drop them
+        if len(self.learned) != len(self.learned_strong):
+            self.learned = self.learned[:0]
+            self.learned_strong = self.learned_strong[:0]
         self.meta = load_meta(user)
         # (drop, rise) from the blink calibration; older "blink_drop" values
         # came from a different measure and are ignored
         cal = self.meta.get("blink")
         self.blink = (float(cal["drop"]), float(cal["rise"])) if isinstance(cal, dict) else None
 
+    def _load(self, name, dim=SFACE_DIM):
+        return _load(os.path.join(self.dir, name), dim)
+
     @property
     def enrolled_any(self):
         return len(self.enrolled) > 0
 
     @property
-    def all(self):
-        return np.vstack([self.enrolled, self.learned]) if len(self.learned) else self.enrolled
+    def strong_enrolled(self):
+        """True if the enrolment has AuraFace samples (facelock 1.2+)."""
+        return len(self.enrolled_strong) > 0
 
-    def learn(self, vec, cap):
-        """Add an embedding from a confident unlock; when full, drop the one
-        most like the others (it adds the least)."""
+    def learn(self, vec, strong_vec, cap):
+        """Add a sample (both models) from a strong unlock; when full, drop
+        the one most like the others (it adds the least)."""
         # reload first: the service may have learned something since this
         # gallery was read
-        self.learned = _load(os.path.join(self.dir, "learned2.npy"))
-        learned = np.vstack([self.learned, vec[None, :]])
-        if len(learned) > cap:
-            sims = learned @ learned.T
+        learned = self._load("learned2.npy")
+        strong = self._load("learned_strong.npy", STRONG_DIM)
+        if len(learned) != len(strong):
+            learned, strong = learned[:0], strong[:0]
+        learned = np.vstack([learned, vec[None, :]])
+        strong = np.vstack([strong, strong_vec[None, :]])
+        if len(strong) > cap:
+            sims = strong @ strong.T
             np.fill_diagonal(sims, -1)
-            # never drop the one just added
             redundancy = sims.max(axis=1)
-            redundancy[-1] = -2
-            learned = np.delete(learned, int(np.argmax(redundancy)), axis=0)
-        self.learned = learned
+            redundancy[-1] = -2  # never drop the one just added
+            drop = int(np.argmax(redundancy))
+            learned = np.delete(learned, drop, axis=0)
+            strong = np.delete(strong, drop, axis=0)
+        self.learned, self.learned_strong = learned, strong
         _save(os.path.join(self.dir, "learned2.npy"), learned)
+        _save(os.path.join(self.dir, "learned_strong.npy"), strong)
 
-    def add_others(self, vectors):
+    def add_others(self, vectors, strong_vectors):
         self.others = np.vstack([self.others, np.asarray(vectors, np.float32)])
+        self.others_strong = np.vstack([self.others_strong, np.asarray(strong_vectors, np.float32)])
         _save(os.path.join(self.dir, "others.npy"), self.others)
+        _save(os.path.join(self.dir, "others_strong.npy"), self.others_strong)
 
     def clear_others(self):
-        self.others = np.zeros((0, 128), np.float32)
-        try:
-            os.unlink(os.path.join(self.dir, "others.npy"))
-        except FileNotFoundError:
-            pass
+        self.others = np.zeros((0, SFACE_DIM), np.float32)
+        self.others_strong = np.zeros((0, STRONG_DIM), np.float32)
+        for name in ("others.npy", "others_strong.npy"):
+            try:
+                os.unlink(os.path.join(self.dir, name))
+            except FileNotFoundError:
+                pass
 
 
-def save_enrolment(user, embeddings, meta):
+def save_enrolment(user, embeddings, meta, strong=None):
     path = _dir(user, create=True)
     _save(os.path.join(path, "enrolled.npy"), np.asarray(embeddings))
-    for name in ("learned.npy", "learned2.npy"):
+    if strong is not None:
+        _save(os.path.join(path, "enrolled_strong.npy"), np.asarray(strong))
+    for name in ("learned.npy", "learned2.npy", "learned_strong.npy"):
         learned = os.path.join(path, name)
         if os.path.exists(learned):
             os.unlink(learned)  # learned data belongs to the old enrolment

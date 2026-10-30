@@ -16,19 +16,27 @@ MODEL_DIR = os.environ.get(
 class Config:
     # [camera]
     device: str = "auto"          # "auto" or a path such as /dev/video0
-    # [match]  (SFace cosine similarity, 0-1)
-    # A look-alike relative scored up to 0.54 against an enrolled face in real
-    # use; its owner usually 0.60-0.88. The bars below keep a margin.
-    accept: float = 0.58          # a frame this similar to you counts...
-    accept_frames: int = 3        # ...and this many such frames unlock
-    accept_instant: float = 0.66  # or one frame this similar to your enrolled face
+    # [match]  similarities 0-1. Two models must both recognise the face,
+    # over strong_frames frames in a row.
+    # AuraFace (the deciding model): on the LFW benchmark no stranger's
+    # 5-photo median passed 0.34; enrolment raises the bar for faces that
+    # match themselves closely.
+    strong_accept: float = 0.55   # lowest AuraFace median bar, for any user
+    strong_frames: int = 5        # frames that must all agree
+    strong_spread: float = 0.10   # no frame more than this below the bar
+    strong_same_person: float = 0.45  # every pair of those frames is one person
+    strong_learned_floor: float = 0.45
+    learn_strong: float = 0.75    # only frames this close (AuraFace) are learned...
+    # SFace (the first check): a look-alike brother reached 0.54 with it
+    accept: float = 0.58          # median bar over the same frames
+    sface_gate: float = 0.45      # frames below this aren't worth AuraFace's time
     learned_floor: float = 0.50   # learned samples only count for a frame this close to the enrolment
-    learn_from: float = 0.68      # only frames this close to the enrolment are learned
+    learn_from: float = 0.68      # ...and this close (SFace) to the enrolment
     max_learned: int = 40
     other_margin: float = 0.03    # a face this close to an "other" (facelock add-other) is refused
     # [unlock]
     scan_seconds: float = 8.0     # longest a scan keeps the camera on
-    attempt_seconds: float = 1.5  # a face that doesn't match for this long = one failed attempt
+    attempt_seconds: float = 2.5  # a face that doesn't match for this long = one failed attempt
     max_failures: int = 3         # then face unlock pauses until you unlock another way
     min_face_px: int = 90         # ignore faces smaller than this (too far away)
     # [liveness]
@@ -44,8 +52,9 @@ class Config:
         "camera": ["device"],
         # older keys (threshold, frames_needed, instant_threshold,
         # learn_threshold, relearn_*) are ignored: they allowed too weak a match
-        "match": ["accept", "accept_frames", "accept_instant", "learned_floor", "learn_from",
-                  "max_learned", "other_margin"],
+        "match": ["strong_accept", "strong_frames", "strong_spread", "strong_same_person",
+                  "strong_learned_floor", "learn_strong", "accept", "sface_gate", "learned_floor",
+                  "learn_from", "max_learned", "other_margin"],
         "unlock": ["scan_seconds", "attempt_seconds", "max_failures", "min_face_px"],
         "liveness": ["liveness"],
         "lowlight": ["dark_luma", "lowlight", "light_after"],

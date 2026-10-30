@@ -194,6 +194,11 @@ class Daemon:
         if not gallery.enrolled_any:
             send("UNAVAIL no face enrolled")
             return
+        if not gallery.strong_enrolled:
+            # enrolled before the two-model check: never unlock on SFace alone
+            emit("failed:reenroll")
+            send("UNAVAIL face enrolled before facelock 1.2; enrol again: sudo facelock enroll")
+            return
         cfg = config.load()
         failures = self.lockouts.get(user)
         if failures >= cfg.max_failures:
@@ -216,16 +221,18 @@ class Daemon:
         learned = False
         if res.ok:
             self.lockouts.clear(user)
-            if res.learn_vec is not None and (cfg.liveness != "blink" or res.blinked):
+            if res.learn_strong is not None and (cfg.liveness != "blink" or res.blinked):
                 with GALLERY_LOCK:
-                    gallery.learn(res.learn_vec, cfg.max_learned)
+                    gallery.learn(res.learn_vec, res.learn_strong, cfg.max_learned)
                 learned = True
-        log.info("auth %s: %s best=%.3f failures=%d/%d first_face=%s elapsed=%ss luma=%s dark=%s blink=%s "
-                 "learned=%s other=%s scores=%s",
-                 user, res.reason, res.best, total if not res.ok else 0, cfg.max_failures,
+        log.info("auth %s: %s best=%.3f strong_median=%s strong_best=%.3f failures=%d/%d first_face=%s "
+                 "elapsed=%ss luma=%s dark=%s blink=%s learned=%s other=%s scores=%s strong=%s",
+                 user, res.reason, res.best, res.median_strong, res.best_strong,
+                 total if not res.ok else 0, cfg.max_failures,
                  res.first_face_s and round(res.first_face_s, 2), res.elapsed, res.luma, res.dark,
-                 res.blinked, learned, res.other_seen, res.scores[:12])
+                 res.blinked, learned, res.other_seen, res.scores[:12], res.strong_scores[:12])
         history.record("scan", user=user, result=res.reason.split(":")[0], best=round(res.best, 3),
+                       strong=res.median_strong if res.ok else round(res.best_strong, 3),
                        seconds=res.elapsed, first_face=res.first_face_s and round(res.first_face_s, 2),
                        failed=res.failures, dark=res.dark, blink=res.blinked, learned=learned,
                        blink_frames=res.blink_frames, blink_peak=res.blink_peak, other=res.other_seen,

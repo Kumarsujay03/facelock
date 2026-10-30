@@ -29,11 +29,14 @@ def pick_diverse(vectors, n):
         sims = (vectors @ vectors[chosen].T).max(axis=1)
         sims[chosen] = 2
         chosen.append(int(np.argmin(sims)))
-    return vectors[chosen]
+    return chosen
 
 
 def capture(engine, cfg, say=print):
-    vectors, sizes, sharp, frames = [], [], [], 0
+    """Returns (SFace samples, AuraFace samples, details). The details
+    include strong_accept: this face's own AuraFace bar, from how closely the
+    frames not kept match the kept ones (never below cfg.strong_accept)."""
+    vectors, crops, sizes, sharp, frames = [], [], [], [], 0
     with Camera(cfg.device) as cam:
         say(f"Camera: {cam.path}")
         stream = cam.frames()
@@ -52,7 +55,9 @@ def capture(engine, cfg, say=print):
                 face = engine.detect(frame)
                 if face is None or face.score < 0.85 or face.size < cfg.min_face_px:
                     continue
-                vectors.append(engine.embed(frame, face))
+                crop = engine.align(frame, face)
+                vectors.append(engine.embed(frame, face, crop))
+                crops.append(crop)
                 sizes.append(face.size)
                 sharp.append(sharpness(frame, face))
                 got += 1
@@ -63,16 +68,36 @@ def capture(engine, cfg, say=print):
                            "sit in front of the camera in good light and try again")
     # drop motion-blurred frames: sharpness is relative, cameras differ a lot
     sharp = np.asarray(sharp)
-    vectors = np.asarray(vectors)[sharp >= 0.6 * np.median(sharp)]
+    good = np.flatnonzero(sharp >= 0.6 * np.median(sharp))
+    vectors = np.asarray(vectors)[good]
+    crops = [crops[i] for i in good]
     centre = vectors.mean(axis=0)
     centre /= np.linalg.norm(centre)
     agree = vectors @ centre
     if np.median(agree) < 0.55:
         raise RuntimeError("the frames don't agree with each other (more than one person in view?)")
-    keep = pick_diverse(vectors[agree >= 0.45], KEEP)
-    return keep, {"frames": frames, "faces": len(vectors), "kept": len(keep),
-                  "median_face_px": float(np.median(sizes)),
-                  "self_similarity": round(float(np.median(agree)), 3)}
+    ok = np.flatnonzero(agree >= 0.45)
+    chosen = [int(ok[i]) for i in pick_diverse(vectors[ok], KEEP)]
+    say("Analysing the face (this takes a few seconds)...")
+    keep_strong = np.array([engine.embed_strong(None, None, crops[i]) for i in chosen])
+    if float((keep_strong @ keep_strong.mean(axis=0)).min()) < 0.3:
+        raise RuntimeError("the frames don't agree with each other (more than one person in view?)")
+    # how closely this face matches itself: frames not kept, against the kept
+    rest = [i for i in range(len(crops)) if i not in set(chosen)]
+    rest = rest[::max(1, len(rest) // 40)][:40]
+    self_scores = []
+    for i in rest:
+        v = engine.embed_strong(None, None, crops[i])
+        self_scores.append(float(np.mean(np.sort(keep_strong @ v)[::-1][:3])))
+    # the bar sits well below how this face matches itself (other light and
+    # days score lower than one sitting), and never below the general minimum
+    p10 = float(np.percentile(self_scores, 10)) if self_scores else 0.0
+    strong_accept = round(min(max(p10 - 0.25, cfg.strong_accept), 0.68), 3)
+    return vectors[chosen], keep_strong, {
+        "frames": frames, "faces": len(vectors), "kept": len(chosen),
+        "median_face_px": float(np.median(sizes)),
+        "self_similarity": round(float(np.median(agree)), 3),
+        "strong_self_p10": round(p10, 3), "strong_accept": strong_accept}
 
 
 def calibrate_blink(engine, cfg, say=print):
