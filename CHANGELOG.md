@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.1
+
+**Security: wider margin against look-alikes.**
+
+- Tested with a real look-alike brother on 1.2.0: refused, but some of his
+  AuraFace frames reached 0.55, the 1.2.0 bar, while the owner scored
+  0.78-0.83.
+- AuraFace bar floor raised to 0.62, enforced in code: settings can raise
+  the bars but no longer lower them below 0.62 (AuraFace) and 0.58 (SFace).
+- Each user's bar now comes from how consistently their face matched
+  itself at enrolment (minus 0.12), between 0.62 and 0.72. For the tested
+  owner that is 0.64: 0.14 below his worst frame, 0.09 above his brother's
+  best. No new enrolment needed.
+
 ## 1.2.0
 
 **Security: two face models must agree, over 5 frames.**

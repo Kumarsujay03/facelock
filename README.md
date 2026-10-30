@@ -39,7 +39,7 @@ and password keep working at the same time; whichever succeeds first wins.
 Download the latest release, or clone the repository, then:
 
 ```sh
-tar xf facelock-1.2.0.tar.gz && cd facelock-1.2.0     # or: git clone https://github.com/Kumarsujay03/facelock && cd facelock
+tar xf facelock-1.2.1.tar.gz && cd facelock-1.2.1     # or: git clone https://github.com/Kumarsujay03/facelock && cd facelock
 sudo ./install.sh
 ```
 
@@ -251,8 +251,10 @@ one yourself.
   below it, and SFace agrees.
 - **Measured.** On the LFW benchmark, running the real decision code on
   14,280 owner/intruder pairs (120 people), no intruder unlocked. The
-  highest any stranger's 5-photo median reached was 0.34; the minimum bar is
-  0.55, and enrolment raises it for faces that match themselves closely.
+  highest any stranger's 5-photo median reached was 0.34. A real look-alike
+  brother reached 0.55 frame by frame (his brother: 0.78–0.83), so nobody's
+  bar is below 0.62, and enrolment sets a higher one for a face that matches
+  itself closely. Settings can only raise these bars.
 - **Look-alike relatives.** Family is the hard case for any webcam face
   unlock. In facelock 1.0.x a brother unlocked his sibling's laptop (single
   model, scores 0.48–0.54 against a bar of 0.45) and his face was then

@@ -42,7 +42,8 @@ def cmd_enroll(a):
     print(f"Face saved: kept {meta['kept']} of {meta['faces']} face frames "
           f"(face ~{meta['median_face_px']:.0f}px, consistency {meta['self_similarity']}).")
     print(f"Your AuraFace bar: {meta['strong_accept']} (your face matches itself at "
-          f"{meta['strong_self_p10']} or better 90% of the time; strangers stay below 0.35).")
+          f"{meta['strong_self_p10']} or better 90% of the time; strangers stay below 0.35, "
+          f"a look-alike brother reached 0.55).")
     if cfg.liveness != "off":
         print()
         do_calibrate(a.user, Engine(), cfg)

@@ -21,7 +21,7 @@ class Config:
     # AuraFace (the deciding model): on the LFW benchmark no stranger's
     # 5-photo median passed 0.34; enrolment raises the bar for faces that
     # match themselves closely.
-    strong_accept: float = 0.55   # lowest AuraFace median bar, for any user
+    strong_accept: float = 0.62   # lowest AuraFace median bar (scan.STRONG_FLOOR is the hard floor)
     strong_frames: int = 5        # frames that must all agree
     strong_spread: float = 0.10   # no frame more than this below the bar
     strong_same_person: float = 0.45  # every pair of those frames is one person

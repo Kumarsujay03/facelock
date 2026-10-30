@@ -76,11 +76,29 @@ def strong_score(vec, gallery, cfg):
     return score, enrolled_score, False
 
 
+# The lowest AuraFace bar anyone gets, whatever the settings say (they can
+# only raise it). Strangers stayed below 0.35 on LFW; a look-alike brother
+# reached 0.55 in real use.
+STRONG_FLOOR = 0.62
+# SFace's median bar has a floor too (the brother reached 0.54-0.57 on it)
+SFACE_FLOOR = 0.58
+
+
+def personal_bar(self_p10):
+    """A face's own AuraFace bar from enrolment: how closely it matches itself
+    (90% of frames at or above self_p10) minus a margin for other light and
+    days, kept between the floor and 0.72."""
+    return round(min(max(self_p10 - 0.12, STRONG_FLOOR), 0.72), 3)
+
+
 def strong_bar(gallery, cfg):
-    """The user's AuraFace bar: measured at enrolment, never below the
-    configured minimum."""
-    measured = gallery.meta.get("strong_accept")
-    return max(cfg.strong_accept, float(measured)) if measured else cfg.strong_accept
+    """The user's AuraFace bar: from how consistently their face matched
+    itself at enrolment, never below STRONG_FLOOR or the configured value."""
+    bar = max(STRONG_FLOOR, cfg.strong_accept)
+    p10 = gallery.meta.get("strong_self_p10")
+    if p10:
+        bar = max(bar, personal_bar(float(p10)))
+    return bar
 
 
 def decide(window, cfg, bar):
@@ -96,7 +114,7 @@ def decide(window, cfg, bar):
     return (same_person
             and float(np.median(strong)) >= bar
             and float(strong.min()) >= bar - cfg.strong_spread
-            and float(np.median(sface)) >= cfg.accept)
+            and float(np.median(sface)) >= max(cfg.accept, SFACE_FLOOR))
 
 
 def run(engine, cfg, gallery, emit=lambda s: None, alive=lambda: True,

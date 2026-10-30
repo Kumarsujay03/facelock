@@ -141,7 +141,7 @@ class LookAlikeTests(unittest.TestCase):
 
     def test_look_alike_is_never_learned(self):
         self.assertLess(0.54, self.cfg.learn_from)
-        self.assertGreaterEqual(self.cfg.learn_strong, self.cfg.strong_accept + 0.15)
+        self.assertGreaterEqual(self.cfg.learn_strong, 0.55 + 0.15)  # the brother reached 0.55
 
     def test_other_person_is_refused(self):
         bro_w = toward(self.me, unit(1, 80)[0], 0.52)
@@ -158,6 +158,64 @@ class LookAlikeTests(unittest.TestCase):
         np.save(old, unit(3, 18))
         store.Gallery("dana")
         self.assertFalse(os.path.exists(old))
+
+
+class RealScoresTests(unittest.TestCase):
+    """Real frames from one laptop (1.2.0): the owner right after enrolment,
+    then his look-alike brother. The brother's AuraFace frames reached 0.55,
+    the 1.2.0 bar; 1.2.1 must refuse him with a clear margin."""
+
+    OWNER = [(0.858, 0.797), (0.863, 0.781), (0.848, 0.827), (0.831, 0.776), (0.875, 0.822)]
+    # every frame the brother's scan checked with both models, in order
+    BROTHER = [(0.451, 0.494), (0.467, 0.429), (0.451, 0.479), (0.462, 0.520), (0.478, 0.462),
+               (0.484, 0.515), (0.452, 0.477), (0.458, 0.534), (0.455, 0.509), (0.452, 0.511),
+               (0.500, 0.528), (0.468, 0.541), (0.450, 0.520), (0.470, 0.538), (0.455, 0.471),
+               (0.477, 0.446), (0.458, 0.528), (0.472, 0.489), (0.488, 0.516), (0.489, 0.485),
+               (0.495, 0.480), (0.452, 0.523), (0.481, 0.491), (0.466, 0.464), (0.486, 0.460),
+               (0.482, 0.458), (0.476, 0.528), (0.474, 0.491), (0.456, 0.506), (0.464, 0.523),
+               (0.462, 0.452), (0.476, 0.492), (0.454, 0.512), (0.497, 0.500), (0.450, 0.519),
+               (0.487, 0.535), (0.493, 0.539), (0.506, 0.546), (0.480, 0.536), (0.464, 0.507),
+               (0.492, 0.480), (0.510, 0.541), (0.485, 0.527), (0.466, 0.503), (0.464, 0.521),
+               (0.482, 0.503), (0.534, 0.551), (0.504, 0.507), (0.477, 0.517), (0.496, 0.523),
+               (0.569, 0.503), (0.520, 0.506), (0.458, 0.497), (0.469, 0.462), (0.458, 0.488),
+               (0.473, 0.545), (0.454, 0.514), (0.454, 0.530), (0.477, 0.501)]
+    OWNER_SELF_P10 = 0.758  # measured at that enrolment
+
+    def setUp(self):
+        from facelock import scan
+        self.scan = scan
+        self.cfg = config.Config()
+        self.vec = unit_dim(1, 5, 512)[0]  # one person throughout: the strictest case
+        g = type("G", (), {})()
+        g.meta = {"strong_self_p10": self.OWNER_SELF_P10, "strong_accept": 0.55}
+        self.bar = scan.strong_bar(g, self.cfg)
+
+    def windows(self, frames):
+        return [[(w, s, self.vec) for w, s in frames[i - 5:i]] for i in range(5, len(frames) + 1)]
+
+    def test_owner_unlocks(self):
+        self.assertTrue(self.scan.decide([(w, s, self.vec) for w, s in self.OWNER], self.cfg, self.bar))
+
+    def test_brother_never_unlocks_even_on_aurafaces_own(self):
+        for window in self.windows(self.BROTHER):
+            self.assertFalse(self.scan.decide(window, self.cfg, self.bar))
+            # and with SFace taken out of the decision entirely
+            fooled_sface = [(0.99, s, v) for _, s, v in window]
+            self.assertFalse(self.scan.decide(fooled_sface, self.cfg, self.bar))
+
+    def test_margins(self):
+        brother_best = max(s for _, s in self.BROTHER)
+        owner_worst = min(s for _, s in self.OWNER)
+        self.assertGreaterEqual(self.bar - brother_best, 0.08)
+        self.assertGreaterEqual(owner_worst - self.bar, 0.10)
+
+    def test_settings_cant_lower_the_floor(self):
+        self.cfg.strong_accept = 0.30
+        self.cfg.accept = 0.30
+        g = type("G", (), {"meta": {}})()
+        self.assertGreaterEqual(self.scan.strong_bar(g, self.cfg), self.scan.STRONG_FLOOR)
+        for window in self.windows(self.BROTHER):
+            self.assertFalse(self.scan.decide(window, self.cfg, self.scan.strong_bar(g, self.cfg)))
 
 
 class BlinkTests(unittest.TestCase):

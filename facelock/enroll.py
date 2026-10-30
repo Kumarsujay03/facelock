@@ -89,10 +89,11 @@ def capture(engine, cfg, say=print):
     for i in rest:
         v = engine.embed_strong(None, None, crops[i])
         self_scores.append(float(np.mean(np.sort(keep_strong @ v)[::-1][:3])))
-    # the bar sits well below how this face matches itself (other light and
-    # days score lower than one sitting), and never below the general minimum
+    # the bar sits below how this face matches itself (other light and days
+    # score lower than one sitting), and never below the floor (scan.py)
+    from .scan import personal_bar
     p10 = float(np.percentile(self_scores, 10)) if self_scores else 0.0
-    strong_accept = round(min(max(p10 - 0.25, cfg.strong_accept), 0.68), 3)
+    strong_accept = max(personal_bar(p10), cfg.strong_accept)
     return vectors[chosen], keep_strong, {
         "frames": frames, "faces": len(vectors), "kept": len(chosen),
         "median_face_px": float(np.median(sizes)),
