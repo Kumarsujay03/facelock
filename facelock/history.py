@@ -94,3 +94,41 @@ def describe(e):
     if e.get("brightness") is not None:
         parts.append(f"brightness {e['brightness']:.0f}")
     return "  ".join(parts)
+
+
+def import_journal():
+    """Copy scans the service logged before the history existed (facelock
+    0.x) from the journal into the history. Returns how many were added."""
+    import re
+    import subprocess
+    if os.path.exists(PATH):
+        return 0
+    out = subprocess.run(["journalctl", "-u", "facelockd", "--no-pager", "-o", "short-iso"],
+                         capture_output=True, text=True).stdout
+    scan = re.compile(r"^(\d{4}-\d\d-\d\d)T(\d\d:\d\d:\d\d)\S* .*auth (\S+): (\S+) best=(\S+) "
+                      r"failures=(\d+)/\d+ first_face=(\S+) elapsed=(\S+)s luma=(\S+) dark=(\S+) "
+                      r"blink=(\S+) learned=(\S+)")
+    relearn = re.compile(r"^(\d{4}-\d\d-\d\d)T(\d\d:\d\d:\d\d)\S* .*relearned (\S+): a scan scoring (\S+)")
+    entries = []
+    for line in out.splitlines():
+        m = scan.match(line)
+        if m:
+            day, tod, user, result, best, failed, first, secs, luma, dark, blink, learned = m.groups()
+            entries.append({"at": f"{day} {tod}", "kind": "scan", "user": user, "result": result.split(":")[0],
+                            "best": float(best), "seconds": float(secs),
+                            "first_face": None if first == "None" else float(first),
+                            "failed": int(failed), "dark": dark == "True", "blink": blink == "True",
+                            "learned": learned == "True",
+                            "brightness": None if luma == "None" else float(luma), "imported": True})
+            continue
+        m = relearn.match(line)
+        if m:
+            day, tod, user, score = m.groups()
+            entries.append({"at": f"{day} {tod}", "kind": "relearn", "user": user,
+                            "best": float(score), "imported": True})
+    os.makedirs(STATE_DIR, mode=0o700, exist_ok=True)
+    fd = os.open(PATH, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w") as f:
+        for e in entries:
+            f.write(json.dumps(e, separators=(",", ":")) + "\n")
+    return len(entries)

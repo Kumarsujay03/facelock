@@ -282,6 +282,15 @@ def cmd_update(a):
         sys.exit(f"Update failed: {e}")
 
 
+def cmd_import_log(a):
+    """Used by install.sh once: scans from before the history existed."""
+    need_root()
+    from . import history
+    n = history.import_journal()
+    if n:
+        print(f"   kept {n} earlier scans from the log in the history")
+
+
 def cmd_status(a):
     from . import __version__, update
     print(f"facelock {__version__}" + (f" (update available: {update.available()}; run: sudo facelock update)"
@@ -322,6 +331,8 @@ def main():
     p.add_argument("--days", type=int, default=14)
     p.add_argument("-o", "--output", help="where to save it (default: your home folder)")
     p.set_defaults(fn=cmd_report)
+    p = sub.add_parser("import-log", help=argparse.SUPPRESS)
+    p.set_defaults(fn=cmd_import_log)
     p = sub.add_parser("update", help="install the newest release from GitHub")
     p.add_argument("--check", action="store_true", help="only say whether there is one")
     p.add_argument("--timer", action="store_true", help=argparse.SUPPRESS)

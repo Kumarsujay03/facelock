@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1
+
+- Updating from a build that had no scan history now copies the earlier
+  scans from the system log into it, so `facelock stats` and `facelock
+  report` include them.
+
 ## 1.0.0
 
 First public release.

@@ -105,6 +105,8 @@ install -d -m 755 /etc/facelock
 [ -f /etc/facelock/facelock.conf ] || install -m 644 "$HERE/system/facelock.conf" /etc/facelock/facelock.conf
 install -m 644 "$HERE/system/facelockd.service" "$HERE/system/facelock-update.service" \
     "$HERE/system/facelock-update.timer" /etc/systemd/system/
+# scans logged before the history file existed (updates from 0.x)
+"$DEST/bin/facelock" import-log || true
 systemctl daemon-reload
 systemctl enable --quiet facelockd.service facelock-update.timer
 systemctl restart facelockd.service
