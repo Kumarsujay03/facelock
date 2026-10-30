@@ -5,6 +5,8 @@
 - New `sudo facelock keyring`: checks that a face login also unlocks the
   keyring (module, PAM files, sealed password, that it unseals), without
   showing the password.
+- `facelock help` (or `facelock` alone) lists every command with what it does
+  and examples; `facelock <command> --help` explains one, with an example.
 - Fixed: `facelock status` crashed (it used a setting removed in 1.2.0).
 - Tests now check that every setting the code uses exists, and CI runs
   `status`, `stats`, `keyring` and `update --check` after installing.

@@ -92,6 +92,9 @@ sudo facelock calibrate   redo the blink calibration
 sudo facelock remove      delete your face data
 ```
 
+`facelock help` lists every command with examples, and
+`facelock <command> --help` explains one.
+
 Settings live in `/etc/facelock/facelock.conf` (every option is explained
 there) and apply from the next scan.
 

@@ -491,34 +491,84 @@ def cmd_status(a):
     print("Service facelockd:", state or "unknown")
 
 
+EXAMPLES = """\
+Getting started:
+  sudo facelock enroll              enrol your face (good light, follow the prompts)
+  sudo facelock test -v             one scan, showing both models' scores per frame
+  sudo facelock improve             add dim light / glasses / another room as a new group
+
+Everyday:
+  facelock status                   version, camera, service, your groups and bars
+  sudo facelock stats               how face unlock is doing, day by day
+  sudo facelock keyring             check that a face login also unlocks your keyring
+  sudo facelock update              install the newest release (--check: only look)
+
+Family and look-alikes:
+  sudo facelock add-other           capture someone who must NOT unlock (they sit, you stay out)
+  sudo facelock clear-others        forget those faces
+
+Problems:
+  sudo facelock report              save a plain-text report (no images, no face data) to send
+  journalctl -u facelockd -f        watch the face service live
+
+Start over or remove:
+  sudo facelock enroll              re-enrol (replaces the old enrolment and its groups)
+  sudo facelock remove              delete your face data
+
+Commands that take a user default to you (the user running sudo).
+Details of one command: facelock <command> --help
+Settings: /etc/facelock/facelock.conf (each one is explained there)
+"""
+
+COMMANDS = [
+    # name, function, short help, takes a user, example
+    ("enroll", cmd_enroll, "enrol your face (replaces an old enrolment)", True, "sudo facelock enroll"),
+    ("improve", cmd_improve, "add your face in other conditions (dim light, glasses) as a new group",
+     True, "sudo facelock improve"),
+    ("test", cmd_test, "one unlock scan with scores, without unlocking anything", True, "sudo facelock test -v"),
+    ("status", cmd_status, "version, cameras, service, enrolled users and their bars", False, "facelock status"),
+    ("stats", cmd_stats, "unlocks, failures and timings, by day", False, "sudo facelock stats --days 7"),
+    ("keyring", cmd_keyring, "check that a face login also unlocks your keyring", True, "sudo facelock keyring"),
+    ("add-other", cmd_add_other, "capture someone who must NOT unlock (a look-alike relative)", True,
+     "sudo facelock add-other"),
+    ("clear-others", cmd_clear_others, "forget the faces added with add-other", True, "sudo facelock clear-others"),
+    ("calibrate", cmd_calibrate, "redo the blink calibration", True, "sudo facelock calibrate"),
+    ("report", cmd_report, "save a plain-text report to send to the developer", False,
+     "sudo facelock report -o ~/report.txt"),
+    ("update", cmd_update, "install the newest release from GitHub", False, "sudo facelock update --check"),
+    ("remove", cmd_remove, "delete your face data", True, "sudo facelock remove"),
+]
+
+
 def main():
-    ap = argparse.ArgumentParser(prog="facelock", description="Face unlock for the login and lock screens.")
-    sub = ap.add_subparsers(dest="cmd", required=True)
-    for name, fn in (("enroll", cmd_enroll), ("improve", cmd_improve), ("keyring", cmd_keyring), ("calibrate", cmd_calibrate), ("test", cmd_test),
-                     ("remove", cmd_remove), ("add-other", cmd_add_other), ("clear-others", cmd_clear_others)):
-        p = sub.add_parser(name)
-        p.add_argument("user", nargs="?", default=default_user())
+    ap = argparse.ArgumentParser(
+        prog="facelock", formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="Face unlock for the GNOME login and lock screens.", epilog=EXAMPLES)
+    sub = ap.add_subparsers(dest="cmd", metavar="<command>")
+    parsers = {}
+    for name, fn, text, takes_user, example in COMMANDS:
+        p = sub.add_parser(name, help=text, description=text, epilog=f"Example:\n  {example}",
+                           formatter_class=argparse.RawDescriptionHelpFormatter)
+        if takes_user:
+            p.add_argument("user", nargs="?", default=default_user(), help="whose face (default: you)")
         p.set_defaults(fn=fn)
-        if name == "test":
-            p.add_argument("-v", "--verbose", action="store_true", help="print every frame")
-            p.add_argument("--no-blink", action="store_true", help="skip the blink check")
-            p.add_argument("--trace", metavar="FILE", help="save per-frame blink-check numbers to FILE")
-    sub.add_parser("status").set_defaults(fn=cmd_status)
-    p = sub.add_parser("stats", help="unlocks, failures and timings, by day")
-    p.add_argument("--days", type=int, default=14)
-    p.add_argument("--last", type=int, default=15, help="list this many recent events")
-    p.set_defaults(fn=cmd_stats)
-    p = sub.add_parser("report", help="save a plain-text report to send to the developer")
-    p.add_argument("--days", type=int, default=14)
-    p.add_argument("-o", "--output", help="where to save it (default: your home folder)")
-    p.set_defaults(fn=cmd_report)
-    p = sub.add_parser("import-log", help=argparse.SUPPRESS)
-    p.set_defaults(fn=cmd_import_log)
-    p = sub.add_parser("update", help="install the newest release from GitHub")
-    p.add_argument("--check", action="store_true", help="only say whether there is one")
-    p.add_argument("--timer", action="store_true", help=argparse.SUPPRESS)
-    p.set_defaults(fn=cmd_update)
+        parsers[name] = p
+    t = parsers["test"]
+    t.add_argument("-v", "--verbose", action="store_true", help="print every frame")
+    t.add_argument("--no-blink", action="store_true", help="skip the blink check")
+    t.add_argument("--trace", metavar="FILE", help="save per-frame blink-check numbers to FILE")
+    for name in ("stats", "report"):
+        parsers[name].add_argument("--days", type=int, default=14, help="how far back (default 14)")
+    parsers["stats"].add_argument("--last", type=int, default=15, help="list this many recent events")
+    parsers["report"].add_argument("-o", "--output", help="where to save it (default: your home folder)")
+    parsers["update"].add_argument("--check", action="store_true", help="only say whether there is one")
+    parsers["update"].add_argument("--timer", action="store_true", help=argparse.SUPPRESS)
+    sub.add_parser("help", help="this overview").set_defaults(fn=lambda a: ap.print_help())
+    sub.add_parser("import-log").set_defaults(fn=cmd_import_log)  # used by install.sh
     a = ap.parse_args()
+    if not a.cmd:
+        ap.print_help()
+        return
     if hasattr(a, "user") and not store.valid_user(a.user):
         sys.exit("Give a valid user name.")
     a.fn(a)
