@@ -33,10 +33,12 @@ grep -q '^auth[[:space:]]*requisite[[:space:]]*pam_face.so' /etc/pam.d/gdm-face 
 ok "PAM module and /etc/pam.d/gdm-face"
 [ -f /usr/share/gnome-shell/extensions/facelock@kumarsujay03.github.io/extension.js ] || fail "extension missing"
 grep -q facelock@kumarsujay03.github.io /etc/dconf/db/gdm.d/03-facelock || fail "extension not enabled for the login screen"
+grep -qx 'system-db:gdm' /etc/dconf/profile/gdm || fail "the login screen's dconf profile doesn't read gdm.d"
 ok "extension installed for the login screen"
 facelock status | grep -q "^facelock $(cat /opt/facelock/VERSION)" || fail "facelock status"
 ok "facelock status"
-facelock report -o /tmp/facelock-report.txt >/dev/null && grep -q "No camera images" /tmp/facelock-report.txt || fail "facelock report"
+report=/tmp/facelock-report.txt
+facelock report -o "$report" >/dev/null && grep -q "No camera images" "$report" || fail "facelock report"
 ok "facelock report"
 
 # a face login for a user with no face enrolled: the module asks the service,

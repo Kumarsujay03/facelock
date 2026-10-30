@@ -198,10 +198,24 @@ chmod -R a+rX "/usr/share/gnome-shell/extensions/$UUID"
 if [ -d /etc/dconf/db ]; then
     # the login screen: keep the extensions other files enable, add ours
     # (dconf uses the last file that sets a key, so this one includes all)
-    # the login screen's settings profile: the distribution's if it has one
-    if [ ! -f /etc/dconf/profile/gdm ] && [ ! -f /usr/share/dconf/profile/gdm ]; then
+    # the login screen reads /etc/dconf/db/gdm.d only if its settings profile
+    # lists "system-db:gdm"; some distributions' own profile doesn't (Ubuntu's
+    # in /usr/share/dconf/profile), so use a copy in /etc that does
+    PROFILE=/etc/dconf/profile/gdm
+    if [ ! -f "$PROFILE" ]; then
         install -d -m 755 /etc/dconf/profile
-        printf 'user-db:user\nsystem-db:gdm\nfile-db:/usr/share/gdm/greeter-dconf-defaults\n' > /etc/dconf/profile/gdm
+        if [ -f /usr/share/dconf/profile/gdm ]; then
+            cp /usr/share/dconf/profile/gdm "$PROFILE"
+        else
+            printf 'user-db:user\n' > "$PROFILE"
+        fi
+    fi
+    if ! grep -qx 'system-db:gdm' "$PROFILE"; then
+        if grep -q '^user-db:' "$PROFILE"; then
+            sed -i '/^user-db:/a system-db:gdm' "$PROFILE"
+        else
+            sed -i '1i system-db:gdm' "$PROFILE"
+        fi
     fi
     install -d -m 755 /etc/dconf/db/gdm.d
     EXISTING=$(grep -h '^enabled-extensions=' /etc/dconf/db/gdm.d/* 2>/dev/null | grep -v "$UUID" |

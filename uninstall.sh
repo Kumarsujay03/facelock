@@ -18,6 +18,8 @@ systemctl daemon-reload
 find /usr/lib /usr/lib64 /lib /lib64 \( -name pam_face.so -o -name pam_facelock_keyring.so \) \
     -path '*security*' -delete 2>/dev/null || true
 rm -rf "/usr/share/gnome-shell/extensions/$UUID"
+# (the system-db:gdm line facelock may have added to /etc/dconf/profile/gdm
+# stays: other login screen settings may rely on it)
 if [ -f /etc/dconf/db/gdm.d/03-facelock ]; then
     rm -f /etc/dconf/db/gdm.d/03-facelock
     dconf update

@@ -245,7 +245,13 @@ def cmd_report(a):
     owner = os.environ.get("SUDO_USER")
     home = os.path.expanduser(f"~{owner}") if owner else os.getcwd()
     path = a.output or os.path.join(home, time.strftime("facelock-report-%Y%m%d-%H%M.txt"))
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    # a fresh file: an old one may belong to someone else (and /tmp won't let
+    # root write into another user's file)
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "w") as f:
         f.write("\n".join(lines) + "\n")
     uid, gid = os.environ.get("SUDO_UID"), os.environ.get("SUDO_GID")
