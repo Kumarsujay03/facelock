@@ -223,7 +223,7 @@ class Daemon:
             self.lockouts.clear(user)
             if res.median_strong is not None:
                 with GALLERY_LOCK:
-                    store.record_unlock(user, res.median_strong)
+                    store.record_unlock(user, res.median_strong, scan.strong_bar(gallery, cfg))
             if res.learn_strong is not None and (cfg.liveness != "blink" or res.blinked):
                 with GALLERY_LOCK:
                     gallery.learn(res.learn_vec, res.learn_strong, cfg.max_learned)

@@ -148,15 +148,20 @@ def save_enrolment(user, embeddings, meta, strong=None):
         if os.path.exists(learned):
             os.unlink(learned)  # learned data belongs to the old enrolment
     # a new enrolment starts the adaptive bar afresh
-    update_meta(user, **meta, unlock_medians=[], enrolled_at=time.strftime("%Y-%m-%d %H:%M:%S"))
+    update_meta(user, **meta, unlock_medians=[], unlock_count=0, adapted_bar=None,
+                enrolled_at=time.strftime("%Y-%m-%d %H:%M:%S"))
 
 
-def record_unlock(user, median, keep=30):
-    """Remember the AuraFace median of a face unlock (the adaptive bar)."""
+def record_unlock(user, median, current_bar, keep=30):
+    """Remember the AuraFace median of a face unlock and move the adaptive
+    bar (scan.next_bar). Returns the new bar."""
+    from .scan import next_bar
     meta = load_meta(user)
-    medians = (list(meta.get("unlock_medians", [])) + [round(float(median), 3)])[-keep:]
-    update_meta(user, unlock_medians=medians)
-    return medians
+    medians = list(meta.get("unlock_medians", [])) + [round(float(median), 3)]
+    count = int(meta.get("unlock_count", len(medians) - 1)) + 1
+    bar = next_bar(current_bar, [0.0] * max(0, count - len(medians)) + medians)
+    update_meta(user, unlock_medians=medians[-keep:], unlock_count=count, adapted_bar=bar)
+    return bar
 
 
 def load_meta(user):

@@ -355,10 +355,14 @@ def bar_story(g, cfg):
     parts = [f"floor {scan.STRONG_FLOOR}"]
     if g.meta.get("strong_self_p10"):
         parts.append(f"enrolment {scan.personal_bar(float(g.meta['strong_self_p10']))}")
+    count = int(g.meta.get("unlock_count", 0))
     medians = g.meta.get("unlock_medians", [])
-    adapted = scan.adaptive_bar(medians)
-    parts.append(f"learned from your unlocks {adapted}" if adapted else
-                 f"learned from your unlocks after {scan.ADAPT_AFTER - len(medians)} more")
+    if count < scan.ADAPT_AFTER:
+        parts.append(f"collecting your scores: {count} of {scan.ADAPT_AFTER} unlocks")
+    else:
+        import numpy as np
+        parts.append(f"raised by your unlocks to {g.meta.get('adapted_bar')} "
+                     f"(your recent median {float(np.median(medians)):.2f})")
     return f"{scan.strong_bar(g, cfg)} (" + ", ".join(parts) + ")"
 
 

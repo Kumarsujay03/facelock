@@ -91,21 +91,29 @@ def personal_bar(self_p10):
     return round(min(max(self_p10 - 0.12, STRONG_FLOOR), 0.72), 3)
 
 
-# the bar adapts to the user's own recent unlocks once there are this many
-ADAPT_AFTER = 10
+# The bar adapts to the user's own unlocks, slowly: it only collects their
+# scores for the first ADAPT_AFTER unlocks, and then only rises while their
+# recent median is at least ADAPT_MIN_MEDIAN, by at most ADAPT_STEP per
+# unlock, towards that median minus ADAPT_MARGIN (and below their typical
+# worst unlock), never above ADAPT_CAP. It never goes down.
+ADAPT_AFTER = 20
 ADAPT_KEEP = 30       # unlock medians remembered
-ADAPT_MARGIN = 0.10   # below the user's typical worst unlock
+ADAPT_MIN_MEDIAN = 0.70
+ADAPT_MARGIN = 0.12
+ADAPT_STEP = 0.005
 ADAPT_CAP = 0.72
 
 
-def adaptive_bar(medians):
-    """From the AuraFace medians of the user's recent face unlocks: their
-    typical worst (10th percentile) minus a margin, capped. None until there
-    are ADAPT_AFTER of them. As learning makes the user's own scores higher,
-    this rises with them."""
-    if len(medians) < ADAPT_AFTER:
-        return None
-    return round(min(float(np.percentile(medians[-ADAPT_KEEP:], 10)) - ADAPT_MARGIN, ADAPT_CAP), 3)
+def next_bar(current, medians):
+    """The bar after one more unlock (medians includes it)."""
+    recent = medians[-ADAPT_KEEP:]
+    if len(medians) < ADAPT_AFTER or float(np.median(recent)) < ADAPT_MIN_MEDIAN:
+        return current
+    target = min(float(np.median(recent)) - ADAPT_MARGIN,
+                 float(np.percentile(recent, 10)) - 0.05, ADAPT_CAP)
+    if target <= current:
+        return current
+    return round(min(current + ADAPT_STEP, target), 3)
 
 
 def strong_bar(gallery, cfg):
@@ -117,9 +125,9 @@ def strong_bar(gallery, cfg):
     p10 = gallery.meta.get("strong_self_p10")
     if p10:
         bar = max(bar, personal_bar(float(p10)))
-    adapted = adaptive_bar(gallery.meta.get("unlock_medians", []))
+    adapted = gallery.meta.get("adapted_bar")
     if adapted:
-        bar = max(bar, adapted)
+        bar = max(bar, float(adapted))
     return bar
 
 

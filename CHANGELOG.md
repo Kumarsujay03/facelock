@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.3
+
+- The adaptive bar is gentler: it only collects scores for the first 20
+  face unlocks, then rises by at most 0.005 per unlock while the user's
+  recent median is 0.70 or more, towards that median minus 0.12 (below
+  their typical worst unlock), capped at 0.72. It never goes down.
+
 ## 1.2.2
 
 - The AuraFace bar now rises with the user: after 10 face unlocks it follows

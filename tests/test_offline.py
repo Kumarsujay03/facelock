@@ -224,30 +224,44 @@ class AdaptiveBarTests(unittest.TestCase):
         self.scan = scan
         self.cfg = config.Config()
 
-    def gallery(self, medians, p10=0.758):
-        return type("G", (), {"meta": {"strong_self_p10": p10, "unlock_medians": medians}})()
+    def run_unlocks(self, medians, start=0.638):
+        bar, seen = start, []
+        for m in medians:
+            seen.append(m)
+            bar = self.scan.next_bar(bar, seen)
+        return bar
 
-    def test_waits_for_enough_unlocks(self):
-        self.assertIsNone(self.scan.adaptive_bar([0.8] * 9))
-        self.assertEqual(self.scan.strong_bar(self.gallery([0.8] * 9), self.cfg), 0.638)
+    def test_only_collects_for_the_first_20(self):
+        self.assertEqual(self.run_unlocks([0.85] * 19), 0.638)
 
-    def test_rises_with_the_owners_scores(self):
-        low = self.scan.strong_bar(self.gallery([0.78] * 12), self.cfg)
-        high = self.scan.strong_bar(self.gallery([0.85] * 12), self.cfg)
-        self.assertGreater(high, low)
-        self.assertGreater(high, 0.638)
+    def test_rises_slowly_after_that(self):
+        bar = self.run_unlocks([0.85] * 21)
+        self.assertGreater(bar, 0.638)
+        self.assertLessEqual(bar, 0.638 + 2 * self.scan.ADAPT_STEP + 1e-9)
 
-    def test_never_below_enrolment_or_floor_and_capped(self):
-        self.assertEqual(self.scan.strong_bar(self.gallery([0.60] * 20), self.cfg), 0.638)
-        self.assertLessEqual(self.scan.strong_bar(self.gallery([0.99] * 20), self.cfg), self.scan.ADAPT_CAP)
+    def test_rises_with_better_scores_up_to_the_cap(self):
+        self.assertEqual(self.run_unlocks([0.95] * 400), self.scan.ADAPT_CAP)
+        # the owner's own worst stays above it
+        self.assertLess(self.run_unlocks([0.80] * 400), 0.80 - 0.05)
+
+    def test_never_moves_on_weak_scores_and_never_drops(self):
+        self.assertEqual(self.run_unlocks([0.66] * 50), 0.638)
+        high = self.run_unlocks([0.85] * 60)
+        self.assertEqual(self.run_unlocks([0.85] * 60 + [0.60] * 30), high)
 
     def test_record_and_reset_on_enrolment(self):
         store.save_enrolment("finn", unit(5, 30), {}, strong=unit_dim(5, 30, 512))
-        for m in [0.8] * 35:
-            store.record_unlock("finn", m)
-        self.assertEqual(len(store.load_meta("finn")["unlock_medians"]), 30)
+        bar = 0.638
+        for _ in range(35):
+            bar = store.record_unlock("finn", 0.85, bar)
+        meta = store.load_meta("finn")
+        self.assertEqual(len(meta["unlock_medians"]), 30)
+        self.assertEqual(meta["unlock_count"], 35)
+        self.assertGreater(meta["adapted_bar"], 0.638)
+        g = type("G", (), {"meta": meta})()
+        self.assertEqual(self.scan.strong_bar(g, self.cfg), meta["adapted_bar"])
         store.save_enrolment("finn", unit(5, 31), {}, strong=unit_dim(5, 31, 512))
-        self.assertEqual(store.load_meta("finn")["unlock_medians"], [])
+        self.assertIsNone(store.load_meta("finn")["adapted_bar"])
 
 
 class BlinkTests(unittest.TestCase):
