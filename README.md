@@ -1,5 +1,7 @@
 # facelock
 
+[![CI](https://github.com/Kumarsujay03/facelock/actions/workflows/ci.yml/badge.svg)](https://github.com/Kumarsujay03/facelock/actions/workflows/ci.yml)
+
 Face unlock for the GNOME login and lock screens on Linux, like a phone or
 Windows Hello: wake the screen, look at the camera, it unlocks. Fingerprint
 and password keep working at the same time; whichever succeeds first wins.
@@ -248,8 +250,17 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python -I tests/replay_blinks.py         # replay it through the blink check
 ```
 
-Releases: `tools/make-release.sh <version>` builds `facelock-<version>.tar.gz`
-and its checksum and publishes them as a GitHub release.
+Every push runs CI: shellcheck, the extension's syntax, unit tests, the
+model downloads, PAM module builds on Ubuntu and Fedora, and a full install
+from the release archive on a fresh Ubuntu with GDM. That install checks the
+service, the PAM module (including that it refuses anything but `gdm-face`),
+the keyring option, updating in place, and a clean uninstall.
+
+Releases: bump `VERSION`, add a `## <version>` entry to `CHANGELOG.md`,
+commit and push, wait for CI, then run `tools/make-release.sh <version>`. It
+pushes the tag; GitHub Actions runs every check again on that commit and
+publishes the release (archive, checksum, notes from the changelog) only if
+they all pass.
 
 ## Licence
 

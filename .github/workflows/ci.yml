@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell scripts (shellcheck)
+        run: |
+          sudo apt-get install -y -q shellcheck >/dev/null
+          shellcheck -S warning install.sh uninstall.sh tools/*.sh tests/*.sh \
+            keyring/facelock-keyring-seal keyring/facelock-keyring-seal-job bin/facelock bin/facelockd
+      - name: Extension (JavaScript syntax, metadata)
+        run: |
+          node --check --input-type=module < extension/facelock@kumarsujay03.github.io/extension.js
+          python3 -c 'import json; m = json.load(open("extension/facelock@kumarsujay03.github.io/metadata.json")); assert m["uuid"] == "facelock@kumarsujay03.github.io", m'
+      - name: Version and changelog agree
+        run: |
+          v=$(cat VERSION)
+          grep -q "^## $v\$" CHANGELOG.md || { echo "CHANGELOG.md has no '## $v' entry"; exit 1; }
+
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python packages
+        run: python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt
+      - name: Unit tests
+        run: .venv/bin/python -I tests/test_offline.py
+      - name: Every module imports
+        run: |
+          .venv/bin/python -I -c 'import sys; sys.path.insert(0, "."); import facelock.cli, facelock.daemon, facelock.update, facelock.history'
+          bin/facelock --help >/dev/null
+      - name: Face models download and match their checksums
+        run: |
+          mkdir -p m && cp models/SHA256SUMS m/
+          while read -r sum file; do
+            url=$(grep -F "$file" models/URLS); curl -fsSL -o "m/$file" "${url#* }"
+          done < models/SHA256SUMS
+          cd m && sha256sum -c SHA256SUMS
+
+  build-fedora:
+    runs-on: ubuntu-24.04
+    container: fedora:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the PAM modules on Fedora
+        run: |
+          dnf install -y -q gcc make pam-devel systemd-devel
+          make -C pam pam_face.so
+          make -C keyring pam_facelock_keyring.so
+
+  install:
+    # the real installer, from the release archive, on a fresh Ubuntu with GDM
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: GDM and GNOME Shell
+        run: |
+          sudo apt-get update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends \
+            gdm3 gnome-shell dconf-cli pamtester >/dev/null
+      - name: Install from the release archive
+        run: |
+          git archive --format=tar.gz --prefix=facelock/ -o /tmp/facelock.tar.gz HEAD
+          mkdir /tmp/rel && tar -xzf /tmp/facelock.tar.gz -C /tmp/rel
+          sudo /tmp/rel/facelock/install.sh --no-keyring
+      - name: Check the installation
+        run: sudo sh tests/check-install.sh
+      - name: Update in place with the keyring option
+        run: |
+          sudo /tmp/rel/facelock/install.sh --update --keyring
+          sudo sh tests/check-install.sh keyring
+      - name: Uninstall leaves nothing behind
+        run: |
+          sudo /tmp/rel/facelock/uninstall.sh
+          sudo sh tests/check-install.sh removed

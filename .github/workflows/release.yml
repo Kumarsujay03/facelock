@@ -1,0 +1,48 @@
+name: Release
+
+# Push a tag vX.Y.Z (tools/make-release.sh does it). Every CI check runs on
+# that commit first; only if all pass is the release published, with the
+# archive and checksum that `facelock update` installs.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: checks
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches VERSION
+        run: |
+          [ "${GITHUB_REF_NAME}" = "v$(cat VERSION)" ] ||
+            { echo "tag ${GITHUB_REF_NAME} but VERSION says $(cat VERSION)"; exit 1; }
+      - name: Archive and checksum
+        run: |
+          v=$(cat VERSION)
+          mkdir dist
+          git archive --format=tar.gz --prefix="facelock-$v/" -o "dist/facelock-$v.tar.gz" HEAD
+          (cd dist && sha256sum "facelock-$v.tar.gz" > "facelock-$v.tar.gz.sha256")
+          # the archive must unpack and contain the installer
+          tar -tzf "dist/facelock-$v.tar.gz" | grep -qx "facelock-$v/install.sh"
+      - name: Release notes from CHANGELOG.md
+        run: |
+          v=$(cat VERSION)
+          awk -v h="## $v" '$0 == h {on = 1; next} /^## / {on = 0} on' CHANGELOG.md > notes.md
+          printf '\nUpdate with `sudo facelock update`, or download below and run `sudo ./install.sh`.\n' >> notes.md
+          cat notes.md
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=$(cat VERSION)
+          gh release create "$GITHUB_REF_NAME" "dist/facelock-$v.tar.gz" "dist/facelock-$v.tar.gz.sha256" \
+            --title "facelock $v" --notes-file notes.md
