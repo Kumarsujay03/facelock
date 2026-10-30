@@ -1,6 +1,8 @@
 # Changelog
 
-## 1.1.0 (security fix)
+## 1.1.0
+
+**Security fix.**
 
 A look-alike relative could unlock: a brother unlocked his sibling's laptop
 three times, and his face was then learned as the owner's.
