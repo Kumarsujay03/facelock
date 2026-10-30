@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.2
+
+- Fixed: if the lock screen restarted its sign-in check during a face scan
+  (for example right as the screen lit up in the dark), the white light stayed
+  on and no new scan started until another key press. The light now goes out
+  and the scan starts again on its own.
+- Fixed: each wake could fire several times as input watches piled up.
+- The white light now stays at most 6 seconds.
+
 ## 1.0.1
 
 - Updating from a build that had no scan history now copies the earlier

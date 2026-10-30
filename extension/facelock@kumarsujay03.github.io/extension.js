@@ -54,7 +54,10 @@ const WANT_WINDOW = 4000;
 // the login screen scans when it first shows (you just booted or logged out)
 const GREETER_WINDOW = 20000;
 // the white light never stays longer than this
-const LIGHT_MAX = 9000;
+const LIGHT_MAX = 6000;
+// a scan cut off by the lock screen restarting its sign-in check is started
+// again on the new one, at most this many times per wake
+const MAX_RESUMES = 2;
 const LIGHT_IN = 450;        // the white light fades and brightens in...
 const LIGHT_OUT = 700;       // ...and back out, gently
 // wakes right after a face unlock are the unlock itself, not a new wake
@@ -491,6 +494,7 @@ class FaceController {
             this._armAfter(LOCK_GRACE);
         } else {
             trace('unlocked');
+            faceBus().scanning = false;
             this._clearWatches();
             this._paused = false;
             this._lightOff(true);
@@ -521,7 +525,10 @@ class FaceController {
     _armIdle() {
         if (!this._active)
             return;
+        // the idle watch fires every time the session goes quiet, so it is
+        // removed once it has fired: one wake watch at a time
         const idleId = this._idle.add_idle_watch(IDLE_BEFORE_WAKE, () => {
+            this._idle.remove_watch(idleId);
             this._watchIds = this._watchIds.filter(id => id !== idleId);
             const activeId = this._idle.add_user_active_watch(() => {
                 this._watchIds = this._watchIds.filter(id => id !== activeId);
@@ -542,6 +549,7 @@ class FaceController {
         }
         trace(`${why}: scanning`);
         this._wantUntil = now() + WANT_WINDOW;
+        this._resumes = 0;
         let started = false;
         for (const verifier of this._verifiers)
             started = this.maybeStart(verifier) || started;
@@ -582,6 +590,7 @@ class FaceController {
             return true;
         verifier._faceRunning = true;
         this._wantUntil = 0; // one scan per wake
+        faceBus().scanning = true;
         trace(`starting face scan for ${verifier._userName}`);
         // GNOME's hold for this verification is released once its own
         // services started; a later start needs a fresh one (as its _retry does)
@@ -618,6 +627,7 @@ class FaceController {
             break;
         }
         case 'matched':
+            faceBus().scanning = false;
             this._succeededAt = now();
             this._lightOff(true);
             this._show('matched');
@@ -636,7 +646,23 @@ class FaceController {
         }
     }
 
+    // the lock screen restarted its sign-in check under a running scan (the
+    // screen blanking, a prompt reset): put the light out, and scan again on
+    // the next check if this wake is recent
+    onCutOff(verifier) {
+        faceBus().scanning = false;
+        this._lightOff(true);
+        if (!this._active || this._paused || (this._resumes ?? 0) >= MAX_RESUMES ||
+            now() - (this._succeededAt ?? -1e9) < AFTER_SUCCESS)
+            return;
+        this._resumes = (this._resumes ?? 0) + 1;
+        trace('face scan cut off by a restarted sign-in check; scanning again');
+        this._wantUntil = now() + WANT_WINDOW;
+        this._show('scanning');
+    }
+
     onStopped(verifier) {
+        faceBus().scanning = false;
         verifier._faceRunning = false;
         this._lightOff();
         if (now() - (this._succeededAt ?? -1e9) > AFTER_SUCCESS)
@@ -734,6 +760,10 @@ export default class FaceUnlockExtension extends Extension {
             this._injections.overrideMethod(proto, name, original =>
                 function (...args) {
                     safely(() => {
+                        // GNOME disconnects from GDM before the conversation
+                        // ends, so a running face scan never reports back
+                        if (this._faceRunning)
+                            controller.onCutOff(this);
                         this._faceRunning = false;
                         controller.forget(this);
                     });
