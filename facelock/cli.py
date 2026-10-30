@@ -4,6 +4,7 @@
   sudo facelock improve [user]  add more of your face (dim light, glasses) without starting over
   sudo facelock calibrate [user]  redo the blink check calibration
   sudo facelock test [user]     run one unlock scan and show the scores
+  sudo facelock keyring [user]  check the keyring unlocks after a face login
   sudo facelock remove [user]   delete your face data
   sudo facelock add-other [user]   capture someone who must NOT unlock (a look-alike relative)
   sudo facelock clear-others [user]  forget those faces
@@ -410,6 +411,64 @@ def bar_story(g, cfg):
     return f"floor {scan.STRONG_FLOOR}; " + "; ".join(parts)
 
 
+def cmd_keyring(a):
+    """Is the keyring unlocked after a face login? Checks every piece without
+    showing the password."""
+    need_root()
+    import glob
+    ok = True
+
+    def line(good, text):
+        nonlocal ok
+        ok = ok and good
+        print(f"  {'ok ' if good else 'NO '} {text}")
+
+    fp = glob.glob("/usr/lib*/**/security/pam_fp_keyring.so", recursive=True) + \
+        glob.glob("/lib*/**/security/pam_fp_keyring.so", recursive=True)
+    own = glob.glob("/usr/lib*/**/security/pam_facelock_keyring.so", recursive=True) + \
+        glob.glob("/lib*/**/security/pam_facelock_keyring.so", recursive=True)
+    if fp and not own:
+        kind, cred = "fp-keyring", f"/var/lib/fp-keyring/{a.user}.cred"
+        name = f"fp-keyring-{a.user}"
+    else:
+        kind, cred = "facelock", f"/var/lib/facelock-keyring/{a.user}.cred"
+        name = f"facelock-keyring-{a.user}"
+    print(f"Keyring unlock after face login for {a.user} ({kind}):")
+    line(bool(fp or own), "keyring PAM module installed" + ("" if fp or own else
+                          " (install with: sudo ./install.sh --keyring)"))
+    try:
+        gdm_face = open("/etc/pam.d/gdm-face").read()
+    except OSError:
+        gdm_face = ""
+    line("keyring.so" in gdm_face and "pam_gnome_keyring" in gdm_face,
+         "/etc/pam.d/gdm-face hands the password to the keyring")
+    if kind == "facelock":
+        try:
+            users = open("/etc/facelock/keyring-users").read().split()
+        except OSError:
+            users = []
+        line(a.user in users, f"{a.user} is in /etc/facelock/keyring-users")
+        common = ""
+        for f in ("/etc/pam.d/common-auth",):
+            try:
+                common += open(f).read()
+            except OSError:
+                pass
+        line("facelock-keyring-seal" in common, "your typed password is sealed (pam-auth-update profile on)")
+    exists = os.path.exists(cred)
+    line(exists, f"sealed password {cred}" + ("" if exists else
+         " missing: lock the screen and unlock once with your PASSWORD, then check again"))
+    if exists:
+        out = subprocess.run(["systemd-creds", "decrypt", f"--name={name}", cred, "-"],
+                             capture_output=True, text=True)
+        line(out.returncode == 0 and len(out.stdout) > 0,
+             "it unseals on this machine" + ("" if out.returncode == 0 else
+             " (failed: unlock once with your password to seal it again)"))
+    print("Ready: a face login also unlocks your keyring." if ok else
+          "Not ready yet: fix the lines marked NO.")
+    sys.exit(0 if ok else 1)
+
+
 def cmd_status(a):
     from . import __version__, update
     print(f"facelock {__version__}" + (f" (update available: {update.available()}; run: sudo facelock update)"
@@ -434,7 +493,7 @@ def cmd_status(a):
 def main():
     ap = argparse.ArgumentParser(prog="facelock", description="Face unlock for the login and lock screens.")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name, fn in (("enroll", cmd_enroll), ("improve", cmd_improve), ("calibrate", cmd_calibrate), ("test", cmd_test),
+    for name, fn in (("enroll", cmd_enroll), ("improve", cmd_improve), ("keyring", cmd_keyring), ("calibrate", cmd_calibrate), ("test", cmd_test),
                      ("remove", cmd_remove), ("add-other", cmd_add_other), ("clear-others", cmd_clear_others)):
         p = sub.add_parser(name)
         p.add_argument("user", nargs="?", default=default_user())

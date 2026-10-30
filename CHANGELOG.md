@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.1
+
+- New `sudo facelock keyring`: checks that a face login also unlocks the
+  keyring (module, PAM files, sealed password, that it unseals), without
+  showing the password.
+
 ## 1.3.0
 
 **A bar per condition.**

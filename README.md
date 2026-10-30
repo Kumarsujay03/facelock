@@ -39,7 +39,7 @@ and password keep working at the same time; whichever succeeds first wins.
 Download the latest release, or clone the repository, then:
 
 ```sh
-tar xf facelock-1.3.0.tar.gz && cd facelock-1.3.0     # or: git clone https://github.com/Kumarsujay03/facelock && cd facelock
+tar xf facelock-1.3.1.tar.gz && cd facelock-1.3.1     # or: git clone https://github.com/Kumarsujay03/facelock && cd facelock
 sudo ./install.sh
 ```
 
@@ -87,6 +87,7 @@ facelock status           version, camera, service, enrolled users
 sudo facelock improve     add more of your face (dim light, glasses) without starting over
 sudo facelock add-other   capture someone who must NOT unlock (a look-alike relative)
 sudo facelock clear-others   forget those faces
+sudo facelock keyring     check that a face login also unlocks your keyring
 sudo facelock calibrate   redo the blink calibration
 sudo facelock remove      delete your face data
 ```
@@ -155,7 +156,16 @@ matches:
 - **Without a TPM:** bound to the systemd host key.
 
 The sealed copy is updated whenever you change your password and type the new
-one. Without full-disk encryption, someone who can take the disk out and
+one.
+
+Check that everything is in place (it never shows the password):
+
+```sh
+sudo facelock keyring
+```
+
+If it says the sealed password is missing, lock the screen and unlock it
+once with your password, then check again. Without full-disk encryption, someone who can take the disk out and
 change the OS could get at it, so turn it off if that matters to you:
 `sudo ./install.sh --no-keyring` on a fresh install, or `sudo ./uninstall.sh`
 and install again.
