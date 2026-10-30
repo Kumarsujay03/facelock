@@ -15,5 +15,8 @@ git archive --format=tar.gz --prefix="facelock-$version/" -o "$out/$tar" HEAD
 (cd "$out" && sha256sum "$tar" > "$tar.sha256")
 git tag -a "v$version" -m "facelock $version" 2>/dev/null || true
 git push origin "v$version"
-gh release create "v$version" "$out/$tar" "$out/$tar.sha256" \
-    --title "facelock $version" ${2:+--notes-file "$2"} ${2:---generate-notes}
+if [ -n "$2" ]; then
+    gh release create "v$version" "$out/$tar" "$out/$tar.sha256" --title "facelock $version" --notes-file "$2"
+else
+    gh release create "v$version" "$out/$tar" "$out/$tar.sha256" --title "facelock $version" --generate-notes
+fi
