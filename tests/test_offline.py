@@ -534,6 +534,38 @@ class CommandTests(unittest.TestCase):
                     self.assertIn(attr, fields, f"{name} uses cfg.{attr}, which isn't a setting")
 
 
+class PauseTests(unittest.TestCase):
+    """A brother's 3 failed tries paused face unlock until the owner used
+    the fingerprint, silently. Now: 30 s, then until another unlock."""
+
+    def setUp(self):
+        from facelock import daemon
+        self.cfg = config.Config()
+        self.lk = daemon.Lockouts(start_watcher=False)
+        self.time = daemon.time
+
+    def test_first_pause_is_short(self):
+        self.lk.add("oli", 3, self.cfg)
+        n, paused = self.lk.state("oli", self.cfg)
+        self.assertTrue(0 < paused <= self.cfg.pause_seconds)
+        self.lk.until["oli"] = self.time.monotonic() - 1   # 30 s later
+        self.assertEqual(self.lk.state("oli", self.cfg), (0, None))
+
+    def test_second_round_pauses_until_another_unlock(self):
+        self.lk.add("oli", 3, self.cfg)
+        self.lk.until["oli"] = self.time.monotonic() - 1
+        self.lk.state("oli", self.cfg)
+        self.lk.add("oli", 3, self.cfg)
+        self.lk.until["oli"] = self.time.monotonic() - 1    # waiting doesn't help
+        self.assertEqual(self.lk.state("oli", self.cfg)[1], 0)
+        self.lk.clear("oli")                                # fingerprint / password
+        self.assertEqual(self.lk.state("oli", self.cfg), (0, None))
+
+    def test_fewer_than_three_failures_dont_pause(self):
+        self.lk.add("oli", 2, self.cfg)
+        self.assertEqual(self.lk.state("oli", self.cfg), (2, None))
+
+
 class BlinkTests(unittest.TestCase):
     def run_seq(self, seq, drop=0.8, shift=None):
         b = liveness.BlinkDetector(drop)

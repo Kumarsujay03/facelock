@@ -40,7 +40,7 @@ const CONTROL_SOCKET = '/run/facelock/control';
 // what a scan that ends without unlocking tells you
 const STOP_TEXT = {
     failures: 'Use fingerprint or password',
-    paused: 'Use fingerprint or password',
+    paused: 'Face unlock paused: use fingerprint or password',
     camera: 'Camera unavailable',
     reenroll: 'Face unlock needs a new enrolment',
 };
@@ -489,7 +489,9 @@ class FaceController {
             badge.succeeded();
             break;
         case 'stopped':
-            badge.stopped(STOP_TEXT[args[0]] ?? null);
+            badge.stopped(args[0] === 'paused' && args[1] > 0
+                ? `Face unlock paused for ${args[1]} s: use fingerprint or password`
+                : STOP_TEXT[args[0]] ?? null);
             break;
         case 'light':
             badge.onLight = args[0];
@@ -591,10 +593,8 @@ class FaceController {
             return;
         if (now() - (this._escapedAt ?? -1e9) < IDLE_BEFORE_WAKE)
             return;
-        if (this._paused) {
-            trace(`${why}: face unlock paused until an unlock`);
-            return;
-        }
+        // (while face unlock is paused the service answers at once, and the
+        // icon shows why, so every wake still asks it)
         trace(`${why}: scanning`);
         this._wantUntil = now() + WANT_WINDOW;
         this._resumes = 0;
@@ -685,9 +685,9 @@ class FaceController {
             this._show('matched');
             break;
         case 'paused':
-            this._paused = true;
+            // seconds left of a short pause, or 0: until another unlock
             this._lightOff();
-            this._show('stopped', 'paused');
+            this._show('stopped', 'paused', Number(rest[0] ?? 0));
             break;
         case 'failed': {
             this._lightOff();

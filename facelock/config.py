@@ -37,7 +37,8 @@ class Config:
     # [unlock]
     scan_seconds: float = 8.0     # longest a scan keeps the camera on
     attempt_seconds: float = 2.5  # a face that doesn't match for this long = one failed attempt
-    max_failures: int = 3         # then face unlock pauses until you unlock another way
+    max_failures: int = 3         # failed tries before face unlock pauses...
+    pause_seconds: float = 30.0   # ...for this long the first time; after 3 more, until you unlock another way
     min_face_px: int = 90         # ignore faces smaller than this (too far away)
     # [liveness]
     liveness: str = "observe"     # "blink" (required), "observe" (logged only) or "off"
@@ -55,7 +56,7 @@ class Config:
         "match": ["strong_accept", "strong_frames", "strong_spread", "strong_same_person",
                   "strong_learned_floor", "learn_strong", "accept", "sface_gate", "learned_floor",
                   "learn_from", "max_learned", "other_margin"],
-        "unlock": ["scan_seconds", "attempt_seconds", "max_failures", "min_face_px"],
+        "unlock": ["scan_seconds", "attempt_seconds", "max_failures", "pause_seconds", "min_face_px"],
         "liveness": ["liveness"],
         "lowlight": ["dark_luma", "lowlight", "light_after"],
         "update": ["auto"],

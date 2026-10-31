@@ -27,36 +27,62 @@ GALLERY_LOCK = threading.Lock()  # one writer of the face data at a time
 
 
 class Lockouts:
-    """Failed attempts per user. After max_failures, face unlock pauses until
-    the user's desktop is seen unlocked (password or fingerprint worked).
+    """Failed attempts per user, in two stages. The first max_failures failed
+    tries pause face unlock for pause_seconds (someone else may have tried:
+    the owner shouldn't be locked out of face unlock for long). If the next
+    max_failures tries fail too, it pauses until the user's desktop is seen
+    unlocked (password or fingerprint worked). A face unlock clears it all.
 
     (facelock 1.0.x also learned "near misses" once the desktop was unlocked.
     That was removed: it couldn't tell who unlocked, and so learned a
     look-alike's face after the look-alike unlocked by face.)"""
 
-    def __init__(self):
+    def __init__(self, start_watcher=True):
         self.failures = {}
+        self.strikes = {}   # times max_failures was reached since the last unlock
+        self.until = {}     # end of a timed pause (monotonic)
         self.lock = threading.Lock()
-        threading.Thread(target=self._watch, daemon=True).start()
+        if start_watcher:
+            threading.Thread(target=self._watch, daemon=True).start()
 
-    def get(self, user):
+    def state(self, user, cfg):
+        """(failed tries so far, None if face unlock may run, else the
+        seconds left of a timed pause, or 0 for "until another unlock")."""
         with self.lock:
-            return self.failures.get(user, 0)
+            failures = self.failures.get(user, 0)
+            if failures < cfg.max_failures:
+                return failures, None
+            if self.strikes.get(user, 0) >= 2:
+                return failures, 0
+            left = self.until.get(user, 0) - time.monotonic()
+            if left > 0:
+                return failures, max(1, round(left))
+            # the timed pause is over: three more tries
+            self.failures[user] = 0
+            return 0, None
 
-    def add(self, user, n):
+    def add(self, user, n, cfg):
         with self.lock:
-            self.failures[user] = self.failures.get(user, 0) + n
-            return self.failures[user]
+            before = self.failures.get(user, 0)
+            total = before + n
+            self.failures[user] = total
+            if before < cfg.max_failures <= total:
+                self.strikes[user] = self.strikes.get(user, 0) + 1
+                self.until[user] = time.monotonic() + cfg.pause_seconds
+            return total
 
     def clear(self, user):
         with self.lock:
             self.failures.pop(user, None)
+            self.strikes.pop(user, None)
+            self.until.pop(user, None)
 
     def _watch(self):
         while True:
             time.sleep(3)
             with self.lock:
-                users = [u for u, n in self.failures.items() if n]
+                users = [u for u in set(self.failures) | set(self.strikes)
+                         if self.failures.get(u) or self.strikes.get(u)]
             for user in users:
                 if desktop_unlocked(user):
                     log.info("%s unlocked another way; face unlock allowed again", user)
@@ -200,10 +226,11 @@ class Daemon:
             send("UNAVAIL face enrolled before facelock 1.2; enrol again: sudo facelock enroll")
             return
         cfg = config.load()
-        failures = self.lockouts.get(user)
-        if failures >= cfg.max_failures:
-            emit("paused")
-            send("UNAVAIL face unlock paused after failed attempts")
+        failures, paused = self.lockouts.state(user, cfg)
+        if paused is not None:
+            emit(f"paused:{paused}")
+            send("UNAVAIL face unlock paused after failed attempts"
+                 + (f" ({paused} s left)" if paused else " (until fingerprint or password)"))
             return
         if not self.camera_lock.acquire(timeout=3):
             send("UNAVAIL camera busy")
@@ -217,7 +244,7 @@ class Daemon:
         if self.stop.is_set() and not res.ok:
             res.reason = "stopped"
             self.stop.clear()
-        total = self.lockouts.add(user, res.failures)
+        total = self.lockouts.add(user, res.failures, cfg)
         learned = False
         if res.ok:
             self.lockouts.clear(user)
@@ -248,7 +275,11 @@ class Daemon:
                 emit(f"failed:{res.reason}")
                 send(f"FAIL {res.reason}")
             else:
-                emit("paused" if total >= cfg.max_failures else f"failed:{res.reason}")
+                if total >= cfg.max_failures:
+                    _, paused = self.lockouts.state(user, cfg)
+                    emit(f"paused:{paused if paused is not None else 0}")
+                else:
+                    emit(f"failed:{res.reason}")
                 send(f"FAIL {res.reason}")
         except OSError:
             pass

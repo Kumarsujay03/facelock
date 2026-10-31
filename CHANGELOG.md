@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.2
+
+- Someone else's failed tries no longer lock the owner out of face unlock
+  for long: the first 3 failed tries pause face unlock for 30 seconds
+  (`pause_seconds`); only if 3 more fail does it wait for a fingerprint or
+  password unlock. (A brother's 3 tries paused it until a fingerprint
+  unlock, and the owner's key presses then silently did nothing.)
+- While paused, every key press shows why on the lock screen ("Face unlock
+  paused for 25 s: use fingerprint or password") instead of doing nothing.
+
 ## 1.3.1
 
 - New `sudo facelock keyring`: checks that a face login also unlocks the
