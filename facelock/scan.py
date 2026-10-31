@@ -11,6 +11,10 @@ The decision: two independent face models, over several frames.
    reaches the user's bar, no single frame is far below it, and SFace's
    median also reaches its bar. One lucky frame can't do it, and a face has
    to fool both models in every one of those frames.
+4. The face models only say whose face it is, and a photo of you is still
+   your face. So the same frames must also look like a live face, not a
+   print or a screen (antispoof.py): their median live-face probability has
+   to reach spoof_live.
 
 The caller passes `emit(signal)` to report progress to the lock screen
 (signals are sent as "facelock:<signal>" PAM info messages) and `alive()`
@@ -40,6 +44,9 @@ class Result:
     learn_strong: np.ndarray = None
     blinked: bool = False
     other_seen: bool = False  # a face closer to a known other person was refused
+    spoof_seen: bool = False  # matched the user's face but looked like a photo or screen
+    live_scores: list = field(default_factory=list)    # live-face probability per checked frame
+    median_live: float = None  # of the deciding frames
     blink_frames: int = 0     # frames the blink check could measure
     blink_peak: float = 0.0   # its strongest eye-closure score (2.0 counts as shut)
     dark: bool = False
@@ -195,12 +202,12 @@ def strong_bar(gallery, cfg, group=None):
     return max(bars.values()) if bars else max(STRONG_FLOOR, cfg.strong_accept)
 
 
-def decide(window, cfg, bar=None):
+def is_face_match(window, cfg, bar=None):
     """window: the latest checked frames as (sface score, strong score,
-    strong vector[, that frame's bar]). True if they prove it is the user:
-    the median margin over each frame's bar is not negative, no frame is
-    more than strong_spread below its bar, all frames show one person, and
-    SFace agrees."""
+    strong vector[, that frame's bar, group, live]). True if they prove it is
+    the user's face: the median margin over each frame's bar is not negative,
+    no frame is more than strong_spread below its bar, all frames show one
+    person, and SFace agrees."""
     if len(window) < cfg.strong_frames:
         return False
     recent = window[-cfg.strong_frames:]
@@ -214,10 +221,31 @@ def decide(window, cfg, bar=None):
             and float(np.median(sface)) >= max(cfg.accept, SFACE_FLOOR))
 
 
+def is_live(window, cfg):
+    """True if the deciding frames look like a live face rather than a photo
+    or a screen (or the check is off). A frame the check couldn't score
+    counts as not live."""
+    if cfg.antispoof != "require":
+        return True
+    recent = window[-cfg.strong_frames:]
+    live = [w[5] if len(w) > 5 and w[5] is not None else 0.0 for w in recent]
+    return float(np.median(live)) >= cfg.spoof_live
+
+
+def decide(window, cfg, bar=None):
+    """The user's face, and a live one."""
+    return is_face_match(window, cfg, bar) and is_live(window, cfg)
+
+
 def run(engine, cfg, gallery, emit=lambda s: None, alive=lambda: True,
         failures_left=None, verbose=None, trace=None):
     res = Result()
     failures_left = cfg.max_failures if failures_left is None else failures_left
+    spoof = getattr(engine, "spoof", None) if cfg.antispoof != "off" else None
+    if cfg.antispoof == "require" and spoof is None:
+        # fail closed: without the photo check a photo could unlock
+        res.reason = "antispoof: model missing (run: sudo facelock update)"
+        return res
     need_blink = cfg.liveness == "blink"
     watch_blink = cfg.liveness in ("blink", "observe")  # observe: recorded, never waited for
     blink = BlinkDetector(*gallery.blink) if gallery.blink else BlinkDetector()
@@ -288,7 +316,10 @@ def run(engine, cfg, gallery, emit=lambda s: None, alive=lambda: True,
                 res.other_seen = res.other_seen or other
                 res.strong_scores.append(round(strong, 3))
                 res.best_strong = max(res.best_strong, strong)
-                window.append((score, strong, strong_vec, bar, group))
+                live_p = spoof.live(frame, face) if spoof is not None else None
+                if live_p is not None:
+                    res.live_scores.append(round(live_p, 3))
+                window.append((score, strong, strong_vec, bar, group, live_p))
                 if (strong_enrolled >= cfg.learn_strong and enrolled_score >= cfg.learn_from
                         and not other and (res.learn_strong is None
                                            or similarity(strong_vec, gallery.learned_strong)
@@ -301,17 +332,25 @@ def run(engine, cfg, gallery, emit=lambda s: None, alive=lambda: True,
             if watch_blink:
                 res.blinked = blink.update(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), face)
             if verbose:
-                verbose(t, score, strong, face, lum, res.blinked)
+                verbose(t, score, strong, face, lum, res.blinked,
+                        live=window[-1][5] if strong is not None else None)
             if trace is not None:
                 trace.append(dict(t=round(t, 3), score=round(score, 3),
                                   strong=None if strong is None else round(strong, 3),
+                                  live=None if strong is None or window[-1][5] is None
+                                  else round(window[-1][5], 3),
                                   luma=round(lum, 1), face=round(face.size),
                                   box=[round(float(v)) for v in face.box],
                                   lm=face.landmarks.round().tolist(), blinked=res.blinked, **blink.last))
 
+            if matched_at is None and is_face_match(window, cfg) and not is_live(window, cfg):
+                # the user's face, but a photo or a screen of it
+                res.spoof_seen = True
             if matched_at is None and decide(window, cfg):
                 matched_at = t
                 recent = window[-cfg.strong_frames:]
+                lives = [w[5] for w in recent if w[5] is not None]
+                res.median_live = round(float(np.median(lives)), 3) if lives else None
                 res.median_strong = round(float(np.median([w[1] for w in recent])), 3)
                 groups = [w[4] for w in recent]
                 res.group = max(set(groups), key=groups.count)

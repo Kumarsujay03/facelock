@@ -43,6 +43,7 @@ const STOP_TEXT = {
     paused: 'Face unlock paused: use fingerprint or password',
     camera: 'Camera unavailable',
     reenroll: 'Face unlock needs a new enrolment',
+    antispoof: 'Face unlock needs an update: sudo facelock update',
 };
 const PREFIX = 'facelock:';
 

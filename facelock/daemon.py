@@ -256,16 +256,19 @@ class Daemon:
                     gallery.learn(res.learn_vec, res.learn_strong, cfg.max_learned)
                 learned = True
         log.info("auth %s: %s best=%.3f strong_median=%s group=%s bar=%s strong_best=%.3f failures=%d/%d first_face=%s "
-                 "elapsed=%ss luma=%s dark=%s blink=%s learned=%s other=%s scores=%s strong=%s",
+                 "elapsed=%ss luma=%s dark=%s blink=%s learned=%s other=%s spoof=%s live=%s scores=%s strong=%s",
                  user, res.reason, res.best, res.median_strong, res.group, res.group_bar, res.best_strong,
                  total if not res.ok else 0, cfg.max_failures,
                  res.first_face_s and round(res.first_face_s, 2), res.elapsed, res.luma, res.dark,
-                 res.blinked, learned, res.other_seen, res.scores[:12], res.strong_scores[:12])
+                 res.blinked, learned, res.other_seen, res.spoof_seen, res.live_scores[:12],
+                 res.scores[:12], res.strong_scores[:12])
         history.record("scan", user=user, result=res.reason.split(":")[0], best=round(res.best, 3),
                        strong=res.median_strong if res.ok else round(res.best_strong, 3),
                        seconds=res.elapsed, first_face=res.first_face_s and round(res.first_face_s, 2),
                        failed=res.failures, dark=res.dark, blink=res.blinked, learned=learned,
                        blink_frames=res.blink_frames, blink_peak=res.blink_peak, other=res.other_seen,
+                       spoof=res.spoof_seen, live=res.median_live if res.ok else
+                       (round(max(res.live_scores), 3) if res.live_scores else None),
                        brightness=res.luma, **({"camera_error": res.reason} if res.reason.startswith("camera") else {}))
         try:
             if res.ok:

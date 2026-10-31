@@ -55,6 +55,16 @@ jobs:
             url=$(grep -F "$file" models/URLS); curl -fsSL -o "m/$file" "${url#* }"
           done < models/SHA256SUMS
           cd m && sha256sum -c SHA256SUMS
+      - name: Photo check models load and score a frame
+        run: |
+          .venv/bin/python -I -c '
+          import sys; sys.path.insert(0, ".")
+          import numpy as np
+          from facelock.antispoof import AntiSpoof
+          class F: box = np.array([200.0, 120.0, 160.0, 200.0])
+          p = AntiSpoof("m").live(np.full((480, 640, 3), 128, np.uint8), F())
+          assert p is not None and 0.0 <= p <= 1.0, p
+          print("live probability of a grey frame:", round(p, 3))'
 
   build-fedora:
     runs-on: ubuntu-24.04

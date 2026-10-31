@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.4.0
+
+- Photo check: a photo of the owner's face on a phone unlocked 1.3.3 (both
+  face models correctly said it was his face: AuraFace 0.68, SFace 0.75).
+  Every frame that decides an unlock is now also checked for signs of a
+  print or a screen by MiniFASNet (Minivision's Silent-Face-Anti-Spoofing,
+  Apache-2.0), the passive check phones without an IR camera use. The
+  deciding frames' median live-face probability must reach `spoof_live`
+  (0.50). On the owner's laptop, phone photos scored 0.00-0.12 and his own
+  face 0.96-1.00.
+- `antispoof = require` is the default (`observe` only records it). If its
+  model files are missing, face unlock refuses rather than run without it;
+  a bad setting falls back to `require`, and `spoof_live` can't go below
+  0.30.
+- `facelock test -v` shows the live score per frame; the log, `stats` and
+  `report` record it, and a refused photo shows as "REFUSED your face as a
+  photo or screen".
+- The blink check stays in observe mode while it collects more data.
+
 ## 1.3.3
 
 - `facelock improve` can now teach dim light: it asks (with a clear warning)

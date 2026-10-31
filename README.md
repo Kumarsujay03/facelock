@@ -134,12 +134,27 @@ there) and apply from the next scan.
   That let a look-alike relative's face be learned, so it was removed in
   1.1.0, and data learned by 1.0.x is deleted when you update.
 
-## Blink check (liveness): still being tested
+## Photo check
 
-An ordinary colour camera can be fooled by a good photo of you. Asking for a
-blink defends against that, but it isn't reliable enough on every camera yet.
-So by default (`liveness = observe`) the blink check only **watches and
-records** what it measures on each scan; it never blocks an unlock. After a
+The face models only say *whose* face it is, and a photo or video of you is
+still your face. So every frame that decides an unlock is also checked for
+signs of a print or a screen (paper texture, screen moire and glare, the edge
+of a phone) by MiniFASNet, the same kind of passive check that phones
+without an IR camera use. It needs nothing from you and adds a few
+milliseconds per frame. The deciding frames' median live-face probability
+must reach `spoof_live` (0.50); `sudo facelock test -v` shows it per frame.
+Set `antispoof = observe` to only record it. If its model files are missing,
+face unlock refuses rather than run without it.
+
+It is not as strong as an IR camera: a sharp, large video of you on a good
+screen is the hardest case for any colour-camera check.
+
+## Blink check: still being tested
+
+A blink is a second defence against photos, but it isn't reliable enough on
+every camera yet. So by default (`liveness = observe`) the blink check only
+**watches and records** what it measures on each scan; it never blocks an
+unlock. After a
 week or two, `sudo facelock stats` and `sudo facelock report` show how it did.
 Shared reports from different laptops will decide when it becomes the default.
 To require a blink now, set `liveness = blink`.
@@ -311,10 +326,12 @@ one yourself.
 
 - Face data never leaves the machine. Update checks are the only network
   access, and they come from the update timer, not the face service.
-- With a colour camera, a photo or video of you may be enough to unlock until
-  the blink check is required; see above. Keep your password for anything
-  that matters more than the lock screen. sudo never uses face unlock.
-- After 3 failed tries, face unlock stays off until you unlock another way.
+- With a colour camera the photo check stops photos and most screens, but a
+  good enough video may still get through (see Photo check). Keep your
+  password for anything that matters more than the lock screen. sudo never
+  uses face unlock.
+- After 3 failed tries face unlock pauses for 30 seconds; after 3 more, until
+  you unlock another way.
 
 ## Development
 

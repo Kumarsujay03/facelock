@@ -68,6 +68,7 @@ OUTCOME = {
     "timeout": "no face found",
     "cancelled": "unlocked another way",
     "stopped": "stopped with Esc",
+    "antispoof": "photo check missing",
 }
 
 
@@ -95,6 +96,10 @@ def describe(e):
         parts.append("learned")
     if e.get("other"):
         parts.append("REFUSED a face closer to an 'other' person")
+    if e.get("spoof"):
+        parts.append("REFUSED your face as a photo or screen")
+    if e.get("live") is not None:
+        parts.append(f"live {e['live']:.2f}")
     if e.get("brightness") is not None:
         parts.append(f"brightness {e['brightness']:.0f}")
     return "  ".join(parts)

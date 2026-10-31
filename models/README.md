@@ -11,3 +11,9 @@ Downloaded by `install.sh` from the [OpenCV model zoo](https://github.com/opencv
   pinned to commit af6d057. Only the recognition model is used; the
   detection and landmark models in that repository (InsightFace weights,
   non-commercial) are not.
+- `antispoof_minifasnet_v2.onnx` and `antispoof_minifasnet_v1se.onnx`: the
+  photo and screen check, MiniFASNetV2 and MiniFASNetV1SE from Minivision's
+  [Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing),
+  Apache License 2.0, as ONNX exports from
+  [yakhyo/face-anti-spoofing](https://github.com/yakhyo/face-anti-spoofing)
+  (Apache License 2.0), pinned by checksum.

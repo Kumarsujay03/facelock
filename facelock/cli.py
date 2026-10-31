@@ -141,10 +141,11 @@ def cmd_test(a):
           f"({', '.join(f'{k}: {v}' for k, v in scan.strong_bars(gallery, cfg).items())}) and SFace median >= "
           f"{cfg.accept}. Look at the camera" + (" and blink." if cfg.liveness == "blink" else "."))
 
-    def verbose(t, score, strong, face, lum, blinked):
+    def verbose(t, score, strong, face, lum, blinked, live=None):
         if a.verbose:
             print(f"  {t:5.2f}s SFace {score:.3f} AuraFace "
                   + ("  -  " if strong is None else f"{strong:.3f}")
+                  + (" live   -  " if live is None else f" live {live:.3f}")
                   + f" face {face.size:.0f}px luma {lum:5.1f}" + (" blink" if blinked else ""))
 
     trace = [] if a.trace else None
@@ -160,11 +161,16 @@ def cmd_test(a):
     print(f"Result: {'UNLOCK' if res.ok else 'no unlock'} ({res.reason}); "
           f"AuraFace median {res.median_strong}, best {res.best_strong:.3f}; SFace best {res.best:.3f}; "
           f"first face at {res.first_face_s and round(res.first_face_s, 2)}s, took {res.elapsed}s, "
-          f"brightness {res.luma}, failed attempts {res.failures}" + (", refused an 'other' face" if res.other_seen else ""))
+          f"brightness {res.luma}, failed attempts {res.failures}" + (", refused an 'other' face" if res.other_seen else "")
+          + (f"; live {res.median_live}" if res.median_live is not None else "")
+          + (", REFUSED: your face, but it looked like a photo or a screen" if res.spoof_seen and not res.ok else ""))
     if res.strong_scores:
         print("AuraFace:", " ".join(f"{s:.2f}" for s in res.strong_scores[:40]))
     if res.scores:
         print("SFace:   ", " ".join(f"{s:.2f}" for s in res.scores[:40]))
+    if res.live_scores:
+        print(f"Live:     {' '.join(f'{s:.2f}' for s in res.live_scores[:40])}  "
+              f"(photo check {cfg.antispoof}, needs median >= {cfg.spoof_live})")
     sys.exit(0 if res.ok else 1)
 
 
@@ -494,7 +500,7 @@ def cmd_status(a):
     cfg = config.load()
     print(f"Config: {config.CONFIG_PATH} (AuraFace floor {max(cfg.strong_accept, 0.62)} over "
           f"{cfg.strong_frames} frames, SFace {cfg.accept}, "
-          f"liveness {cfg.liveness}, "
+          f"blink check {cfg.liveness}, photo check {cfg.antispoof} (live >= {cfg.spoof_live}), "
           f"max failures {cfg.max_failures}, auto-update {'on' if cfg.auto_update else 'off'})")
     if os.access(config.STATE_DIR, os.R_OK):
         for user in store.users():

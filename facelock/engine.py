@@ -45,6 +45,10 @@ class Engine:
         self.strong.setInput(self._blob(np.zeros((112, 112, 3), np.uint8)))
         self.strong.forward()
         self._size = None
+        # photo/screen check; None when its models aren't installed (a scan
+        # that requires it then refuses)
+        from .antispoof import AntiSpoof
+        self.spoof = AntiSpoof(model_dir) if AntiSpoof.available(model_dir) else None
 
     def detect(self, frame):
         """Largest face in the frame, or None."""

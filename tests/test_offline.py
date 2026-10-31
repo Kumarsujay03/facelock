@@ -114,26 +114,26 @@ class LookAlikeTests(unittest.TestCase):
         return out
 
     def test_owner_unlocks(self):
-        self.assertTrue(self.scan.decide(self.frames(0.9, 0.85), self.cfg, self.bar))
+        self.assertTrue(self.scan.is_face_match(self.frames(0.9, 0.85), self.cfg, self.bar))
 
     def test_needs_five_frames(self):
-        self.assertFalse(self.scan.decide(self.frames(0.9, 0.85, n=4), self.cfg, self.bar))
+        self.assertFalse(self.scan.is_face_match(self.frames(0.9, 0.85, n=4), self.cfg, self.bar))
 
     def test_look_alike_never_unlocks(self):
         # the brother's real SFace scores (0.48-0.54), even if AuraFace were fooled
-        self.assertFalse(self.scan.decide(self.frames(0.52, 0.85), self.cfg, self.bar))
+        self.assertFalse(self.scan.is_face_match(self.frames(0.52, 0.85), self.cfg, self.bar))
         # and an AuraFace score at a stranger's worst (0.39) with a perfect SFace
-        self.assertFalse(self.scan.decide(self.frames(0.9, 0.40), self.cfg, self.bar))
+        self.assertFalse(self.scan.is_face_match(self.frames(0.9, 0.40), self.cfg, self.bar))
 
     def test_one_lucky_frame_is_not_enough(self):
         window = self.frames(0.9, 0.40, n=4) + self.frames(0.95, 0.95, n=1, seed=60)
-        self.assertFalse(self.scan.decide(window, self.cfg, self.bar))
+        self.assertFalse(self.scan.is_face_match(window, self.cfg, self.bar))
 
     def test_frames_must_be_one_person(self):
         # 5 frames each matching the owner but from two different faces
         other_s = unit_dim(1, 99, 512)[0]
         window = self.frames(0.9, 0.85, n=3) + self.frames(0.9, 0.85, n=2, seed=70, base_s=other_s)
-        self.assertFalse(self.scan.decide(window, self.cfg, self.bar))
+        self.assertFalse(self.scan.is_face_match(window, self.cfg, self.bar))
 
     def test_bar_never_below_the_minimum(self):
         self.g.meta["strong_accept"] = 0.2
@@ -216,14 +216,14 @@ class RealScoresTests(unittest.TestCase):
         return [[(w, s, self.vec) for w, s in frames[i - 5:i]] for i in range(5, len(frames) + 1)]
 
     def test_owner_unlocks(self):
-        self.assertTrue(self.scan.decide([(w, s, self.vec) for w, s in self.OWNER], self.cfg, self.bar))
+        self.assertTrue(self.scan.is_face_match([(w, s, self.vec) for w, s in self.OWNER], self.cfg, self.bar))
 
     def test_brother_never_unlocks_even_on_aurafaces_own(self):
         for window in self.windows(self.BROTHER):
-            self.assertFalse(self.scan.decide(window, self.cfg, self.bar))
+            self.assertFalse(self.scan.is_face_match(window, self.cfg, self.bar))
             # and with SFace taken out of the decision entirely
             fooled_sface = [(0.99, s, v) for _, s, v in window]
-            self.assertFalse(self.scan.decide(fooled_sface, self.cfg, self.bar))
+            self.assertFalse(self.scan.is_face_match(fooled_sface, self.cfg, self.bar))
 
     def test_brother_after_glasses_enrolment(self):
         g = type("G", (), {"meta": {"strong_self_p10": 0.755}})()
@@ -232,10 +232,10 @@ class RealScoresTests(unittest.TestCase):
         for frames in (self.BROTHER_2, self.BROTHER_GLASSES):
             for window in self.windows(frames):
                 fooled_sface = [(0.99, s, v) for _, s, v in window]
-                self.assertFalse(self.scan.decide(fooled_sface, self.cfg, bar))
+                self.assertFalse(self.scan.is_face_match(fooled_sface, self.cfg, bar))
                 med = sorted(s for _, s, _ in window)[2]
                 self.assertGreaterEqual(bar - med, 0.07)
-        self.assertTrue(self.scan.decide([(w, s, self.vec) for w, s in self.OWNER_2], self.cfg, bar))
+        self.assertTrue(self.scan.is_face_match([(w, s, self.vec) for w, s in self.OWNER_2], self.cfg, bar))
 
     def test_margins(self):
         brother_best = max(s for _, s in self.BROTHER)
@@ -249,7 +249,7 @@ class RealScoresTests(unittest.TestCase):
         g = type("G", (), {"meta": {}})()
         self.assertGreaterEqual(self.scan.strong_bar(g, self.cfg), self.scan.STRONG_FLOOR)
         for window in self.windows(self.BROTHER):
-            self.assertFalse(self.scan.decide(window, self.cfg, self.scan.strong_bar(g, self.cfg)))
+            self.assertFalse(self.scan.is_face_match(window, self.cfg, self.scan.strong_bar(g, self.cfg)))
 
 
 class AdaptiveBarTests(unittest.TestCase):
@@ -356,13 +356,13 @@ class GroupBarTests(unittest.TestCase):
 
     def test_dim_light_unlocks_against_the_dim_group(self):
         w = self.window(self.dim, 0.80, 100)
-        self.assertTrue(self.scan.decide(w, self.cfg))
+        self.assertTrue(self.scan.is_face_match(w, self.cfg))
         self.assertTrue(all(f[4] == 1 for f in w))
 
     def test_bright_light_still_needs_the_strict_bar(self):
         # a face matching only the bright group at 0.70 is below its 0.75 bar
         w = [(0.8, 0.70, self.bright, 0.75, 0)] * 5
-        self.assertFalse(self.scan.decide(w, self.cfg))
+        self.assertFalse(self.scan.is_face_match(w, self.cfg))
 
     def test_no_group_bar_below_the_floor(self):
         store.add_enrolment("ivy", unit(16, 65), unit_dim(16, 65, 512), p10=0.3)
@@ -426,8 +426,8 @@ class MigrationTests(unittest.TestCase):
         bars = self.scan.strong_bars(g, self.cfg)
         self.assertTrue(all(0.62 <= b <= 0.75 for b in bars.values()))
         # he unlocks in dim light (scores like his real 0.62-0.70) and in good light
-        self.assertTrue(self.scan.decide(self.probe_window(g, self.dim_c, 0.82, 500), self.cfg))
-        self.assertTrue(self.scan.decide(self.probe_window(g, self.bright_c, 0.85, 600), self.cfg))
+        self.assertTrue(self.scan.is_face_match(self.probe_window(g, self.dim_c, 0.82, 500), self.cfg))
+        self.assertTrue(self.scan.is_face_match(self.probe_window(g, self.bright_c, 0.85, 600), self.cfg))
         # saved, so the split is stable from now on
         self.assertTrue(os.path.exists(os.path.join(TMP, "jon", "enrolled_group.npy")))
         self.assertIn("groups", store.load_meta("jon"))
@@ -488,7 +488,7 @@ class InvariantTests(unittest.TestCase):
                     v = toward(c, unit_dim(1, 3000 + 100 * trial + 10 * j + i, 512)[0], sim)
                     s, _, _, grp, bar = self.scan.strong_score(v, g, self.cfg)
                     window.append((0.8, s, v, bar, grp))
-                self.assertTrue(self.scan.decide(window, self.cfg), (trial, j, [round(w[1], 3) for w in window], bars))
+                self.assertTrue(self.scan.is_face_match(window, self.cfg), (trial, j, [round(w[1], 3) for w in window], bars))
 
     def test_improve_never_changes_existing_bars(self):
         face = unit_dim(1, 4000, 512)[0]
@@ -600,6 +600,68 @@ class BlinkTests(unittest.TestCase):
         blinks = [(1.0, 0.0)] * 10 + [(0.7, 9.0)] * 3 + [(1.0, 0.0)] * 10 + [(0.72, 8.0)] * 3
         drop, rise = liveness.calibrate(steady, blinks)
         self.assertTrue(0.85 <= drop <= 0.9 and rise >= 4.0)
+
+
+class PhotoCheckTests(unittest.TestCase):
+    """A photo of the owner is the owner's face: both face models match it
+    (0.68 AuraFace and 0.75 SFace in a real test). Only the photo check stops
+    it."""
+
+    def setUp(self):
+        from facelock import scan
+        self.scan = scan
+        self.cfg = config.Config()
+        self.vec = unit_dim(1, 5, 512)[0]
+
+    def window(self, lives):
+        # the owner's face in every frame, well above the bar
+        return [(0.75, 0.70, self.vec, 0.62, 0, live) for live in lives]
+
+    def test_live_owner_unlocks(self):
+        self.assertTrue(self.scan.decide(self.window([0.97, 0.99, 0.91, 0.95, 0.98]), self.cfg))
+
+    def test_photo_of_owner_never_unlocks(self):
+        self.assertTrue(self.scan.is_face_match(self.window([0.02] * 5), self.cfg))
+        self.assertFalse(self.scan.decide(self.window([0.02, 0.10, 0.31, 0.05, 0.01]), self.cfg))
+
+    def test_a_few_live_looking_frames_are_not_enough(self):
+        self.assertFalse(self.scan.decide(self.window([0.99, 0.95, 0.10, 0.20, 0.05]), self.cfg))
+
+    def test_unscored_frames_count_as_not_live(self):
+        self.assertFalse(self.scan.decide(self.window([None, None, None, 0.99, 0.99]), self.cfg))
+        self.assertFalse(self.scan.decide([w[:5] for w in self.window([0.99] * 5)], self.cfg))
+
+    def test_observe_and_off_only_record(self):
+        for mode in ("observe", "off"):
+            self.cfg.antispoof = mode
+            self.assertTrue(self.scan.decide(self.window([0.02] * 5), self.cfg))
+
+    def test_required_check_without_its_models_refuses(self):
+        class NoSpoofEngine:
+            spoof = None
+
+            def detect(self, frame):
+                raise AssertionError("the camera must not even be opened")
+        res = self.scan.run(NoSpoofEngine(), self.cfg, None)
+        self.assertFalse(res.ok)
+        self.assertTrue(res.reason.startswith("antispoof"))
+
+    def test_settings_cant_switch_it_off_by_accident(self):
+        path = os.path.join(TMP, "spoof.conf")
+        with open(path, "w") as f:
+            f.write("[liveness]\nantispoof = maybe\nspoof_live = 0.0\n")
+        cfg = config.load(path)
+        self.assertEqual(cfg.antispoof, "require")
+        self.assertEqual(cfg.spoof_live, 0.30)
+        self.assertEqual(config.Config().antispoof, "require")
+
+    def test_model_checksums_listed(self):
+        from facelock import antispoof
+        sums = open(os.path.join(ROOT, "models", "SHA256SUMS")).read()
+        urls = open(os.path.join(ROOT, "models", "URLS")).read()
+        for name, _ in antispoof.MODELS:
+            self.assertIn(name, sums)
+            self.assertIn(name, urls)
 
 
 class ConfigTests(unittest.TestCase):

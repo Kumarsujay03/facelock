@@ -42,6 +42,8 @@ class Config:
     min_face_px: int = 90         # ignore faces smaller than this (too far away)
     # [liveness]
     liveness: str = "observe"     # "blink" (required), "observe" (logged only) or "off"
+    antispoof: str = "require"    # photo/screen check: "require", "observe" (logged only) or "off"
+    spoof_live: float = 0.50      # median live-face probability the deciding frames need
     # [lowlight]
     dark_luma: float = 55.0       # mean brightness (0-255) below which the screen lights up
     light_after: float = 1.5      # seconds of trying without the light first
@@ -57,7 +59,7 @@ class Config:
                   "strong_learned_floor", "learn_strong", "accept", "sface_gate", "learned_floor",
                   "learn_from", "max_learned", "other_margin"],
         "unlock": ["scan_seconds", "attempt_seconds", "max_failures", "pause_seconds", "min_face_px"],
-        "liveness": ["liveness"],
+        "liveness": ["liveness", "antispoof", "spoof_live"],
         "lowlight": ["dark_luma", "lowlight", "light_after"],
         "update": ["auto"],
     }
@@ -91,4 +93,8 @@ def load(path=CONFIG_PATH):
             setattr(cfg, "auto_update" if key == "auto" else key, value)
     if cfg.liveness not in ("blink", "observe", "off"):
         cfg.liveness = "observe"
+    if cfg.antispoof not in ("require", "observe", "off"):
+        cfg.antispoof = "require"
+    # never weaker than a coin toss; a typo can't switch the check off
+    cfg.spoof_live = min(max(cfg.spoof_live, 0.30), 0.95)
     return cfg
