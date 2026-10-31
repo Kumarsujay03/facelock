@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.3
+
+- `facelock improve` can now teach dim light: it asks (with a clear warning)
+  for frames matching the enrolment down to 0.35, instead of refusing below
+  0.50. In dim morning light an owner matched his well-lit enrolment at only
+  0.46, so that condition could not be added at all. Below 0.35 (stranger
+  level) it still refuses.
+- A group's own bar is capped at 0.70 (was 0.75): a bar measured within one
+  sitting is optimistic, and the same face scores lower on another day.
+
 ## 1.3.2
 
 - Someone else's failed tries no longer lock the owner out of face unlock

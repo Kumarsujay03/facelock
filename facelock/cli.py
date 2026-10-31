@@ -68,7 +68,7 @@ def do_calibrate(user, engine, cfg):
               f"open eyes {info['open_floor']}, blinks {info['blink_dips']}).")
 
 
-IMPROVE_MIN = 0.50  # AuraFace; strangers stay below 0.35
+IMPROVE_MIN = 0.35  # AuraFace: strangers stay below this; between it and the bar we ask first
 
 
 def cmd_improve(a):
@@ -101,8 +101,11 @@ def cmd_improve(a):
         # glasses or dim light lower the score: exactly what this is for,
         # so ask rather than refuse
         print(f"These frames match your enrolment at {match:.2f} (its strictest bar is {bar}), as "
-              f"expected for glasses or dim light. Only add them if it was you alone in front of "
-              f"the camera.")
+              f"expected for glasses or dim light.")
+        if match < 0.50:
+            print("That is low: in this light your face looks quite different to the model.")
+        print("Only add them if it was you, alone, in front of the camera: whoever's face this is "
+              "will be able to unlock in these conditions.")
         if not sys.stdin.isatty() or input("Add them? [y/N] ").strip().lower() not in ("y", "yes"):
             sys.exit("Not added.")
     count, group = store.add_enrolment(a.user, vectors, strong, p10=meta.get("strong_self_p10"))

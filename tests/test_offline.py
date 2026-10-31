@@ -351,7 +351,7 @@ class GroupBarTests(unittest.TestCase):
 
     def test_each_capture_has_its_own_bar(self):
         bars = self.scan.strong_bars(self.g, self.cfg)
-        self.assertEqual(bars[0], 0.75)
+        self.assertEqual(bars[0], 0.70)  # capped: one sitting is optimistic
         self.assertEqual(bars[1], 0.64)
 
     def test_dim_light_unlocks_against_the_dim_group(self):
