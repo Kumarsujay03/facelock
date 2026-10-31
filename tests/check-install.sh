@@ -43,12 +43,13 @@ grep -qx 'system-db:gdm' /etc/dconf/profile/gdm || fail "the login screen's dcon
 ok "extension installed for the login screen"
 # every command that needs no camera must run cleanly (a crash after the
 # first line of output once slipped through a grep on that line)
-out=$(facelock status 2>&1) || { echo "$out"; fail "facelock status crashed"; }
+out=$(timeout 60 facelock status 2>&1) || { echo "$out"; fail "facelock status crashed or hung"; }
 echo "$out" | grep -q "^facelock $(cat /opt/facelock/VERSION)" || fail "facelock status"
 for cmd in "stats" "keyring" "update --check" "--help"; do
     # (stats and keyring exit 1 on a fresh machine: no scans, no sealed
     # password yet; that's fine, a crash isn't)
-    rc=0; out=$(facelock $cmd 2>&1) || rc=$?
+    rc=0; out=$(timeout 60 facelock $cmd 2>&1) || rc=$?
+    [ $rc -eq 124 ] && fail "facelock $cmd hung (no answer in 60 s)"
     echo "$out" | grep -q "Traceback" && { echo "$out"; fail "facelock $cmd crashed"; }
     [ $rc -le 1 ] || fail "facelock $cmd exited with $rc"
 done

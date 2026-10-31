@@ -12,6 +12,7 @@ permissions:
 jobs:
   lint:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Shell scripts (shellcheck)
@@ -30,6 +31,7 @@ jobs:
 
   test:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Python packages
@@ -56,6 +58,7 @@ jobs:
 
   build-fedora:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     container: fedora:latest
     steps:
       - uses: actions/checkout@v4
@@ -68,6 +71,7 @@ jobs:
   install:
     # the real installer, from the release archive, on a fresh Ubuntu with GDM
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: GDM and GNOME Shell

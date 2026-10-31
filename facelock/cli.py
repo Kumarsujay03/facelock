@@ -320,7 +320,8 @@ def cmd_report(a):
         f"update timer: {run('systemctl', 'is-active', 'facelock-update.timer')}",
         f"/etc/pam.d/gdm-face: {'present' if os.path.exists('/etc/pam.d/gdm-face') else 'MISSING'}",
         "keyring unlock: " + ("facelock (on)" if os.path.exists("/usr/share/pam-configs/facelock-keyring")
-                              else "fp-keyring" if run("sh", "-c", "find /usr/lib /usr/lib64 -name pam_fp_keyring.so 2>/dev/null")
+                              else "fp-keyring" if (pam_module_dir() and os.path.exists(
+                                  os.path.join(pam_module_dir(), "pam_fp_keyring.so")))
                               else "off"),
         "extension: " + ("installed" if os.path.isdir("/usr/share/gnome-shell/extensions/facelock@kumarsujay03.github.io")
                          else "MISSING"),
@@ -411,11 +412,25 @@ def bar_story(g, cfg):
     return f"floor {scan.STRONG_FLOOR}; " + "; ".join(parts)
 
 
+def pam_module_dir():
+    """The folder with the PAM modules (where pam_unix.so is), found the way
+    install.sh finds it. A shallow, non-following search: a recursive glob
+    over /usr/lib follows symlinks and can run for hours."""
+    for d in ("/usr/lib/security", "/usr/lib64/security", "/lib/security", "/lib64/security"):
+        if os.path.exists(os.path.join(d, "pam_unix.so")):
+            return d
+    try:
+        out = subprocess.run(["find", "/usr/lib", "/usr/lib64", "/lib", "/lib64", "-maxdepth", "3",
+                              "-name", "pam_unix.so"], capture_output=True, text=True, timeout=20).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return os.path.dirname(out.splitlines()[0]) if out.strip() else None
+
+
 def cmd_keyring(a):
     """Is the keyring unlocked after a face login? Checks every piece without
     showing the password."""
     need_root()
-    import glob
     ok = True
 
     def line(good, text):
@@ -423,10 +438,9 @@ def cmd_keyring(a):
         ok = ok and good
         print(f"  {'ok ' if good else 'NO '} {text}")
 
-    fp = glob.glob("/usr/lib*/**/security/pam_fp_keyring.so", recursive=True) + \
-        glob.glob("/lib*/**/security/pam_fp_keyring.so", recursive=True)
-    own = glob.glob("/usr/lib*/**/security/pam_facelock_keyring.so", recursive=True) + \
-        glob.glob("/lib*/**/security/pam_facelock_keyring.so", recursive=True)
+    pamdir = pam_module_dir()
+    fp = pamdir and os.path.exists(os.path.join(pamdir, "pam_fp_keyring.so"))
+    own = pamdir and os.path.exists(os.path.join(pamdir, "pam_facelock_keyring.so"))
     if fp and not own:
         kind, cred = "fp-keyring", f"/var/lib/fp-keyring/{a.user}.cred"
         name = f"fp-keyring-{a.user}"
